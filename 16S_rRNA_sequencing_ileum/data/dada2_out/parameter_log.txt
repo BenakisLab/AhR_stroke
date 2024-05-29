@@ -1,0 +1,9 @@
+[1] "Filepath: /home/adamsorbie/data/ileum_16S-ahr-project/data/fastq/"
+[1] "Forward trunc: 230:"
+[1] "Reverse trunc: 210:"
+[1] "Internal QC performed: TRUE"
+[1] "Output: /home/adamsorbie/data/ileum_16S-ahr-project/data/dada2_out/"
+[1] "Forward errors: 2"
+[1] "Reverse errors: 2"
+[1] "Threads: 2"
+406.445 sec elapsed

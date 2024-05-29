@@ -1,0 +1,25 @@
+ID 	strain	condition	sex	age (weeks)	weight loss after surgery	severity_score	severity	infarct_vol
+M1	C57BL/6J	sham	male	10.14	0	0	mild	
+M2	C57BL/6J	sham	male	10.14	1.9	0	mild	
+M3	C57BL/6J	sham	male	10.14	2.77	0	mild	
+M4	C57BL/6J	sham	male	10.14	0	0	mild	
+M5	C57BL/6J	sham	male	10.14	3.44	0	mild	
+M6	C57BL/6J	sham	male	10.14	2.53	0	mild	
+M7	C57BL/6J	sham	male	10.14	-0.41	0	mild	
+M8	C57BL/6J	sham	male	10.14	1.54	0	mild	
+M9	C57BL/6J	sham	male	10.14	1.24	0	mild	
+M10	C57BL/6J	sham	male	10.14	3.04	0	mild	
+M11	C57BL/6J	fMCAO	male	10.14	6.95	1	moderate	
+M16	C57BL/6J	fMCAO	male	10.43	11.49	2	moderate	
+M17	C57BL/6J	fMCAO	male	10.43	6.61	1	moderate	
+M19	C57BL/6J	fMCAO	male	10.43	26.61	3	severe	
+M20	C57BL/6J	fMCAO	male	10.43	2.54	1	moderate	
+M21	C57BL/6J	fMCAO	male	10.43	7.73	0	mild	
+RD521	C57BL/6J	fMCAO	male	10.43	24.05	2	moderate	
+RD522	C57BL/6J	fMCAO	male	10.43	28.37	3	severe	
+RD274	C57BL/6J	fMCAO	male	6.7	13.8	2	moderate	91.364
+RD275	C57BL/6J	fMCAO	male	6.7	28	3	severe	82.633
+RD278	C57BL/6J	fMCAO	male	6.9	11.3	2	moderate	80.632
+RD273	C57BL/6J	fMCAO	male	6.7	16.6	1	moderate	42.692
+RD630	C57BL/6J	fMCAO	male	12.1	29.8	3	severe	81.9184
+RD640	C57BL/6J	fMCAO	male	9	31.8	3	severe	

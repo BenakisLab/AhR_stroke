@@ -1,0 +1,513 @@
+---
+title: "ahr_ileum_tax"
+author: "Adam Sorbie"
+date: "2023-06-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Analysis of taxonomic profiles from ileum content of sham/stroke mice - AHR project
+
+This document contains code to analyse taxonomic profiles produced from 150bp PE
+Illumina Nextseq sequencing of DNA extracted from the ileum content of sham
+and stroke (fMCAO) mice. 
+
+Sequencing Methods overview: 
+
+Platform: Illumina Nextseq
+Adapters: Nextera PE
+Paired: TRUE
+Read length: 150bp
+Depth: 2Gbp (approximate target)
+Avg. reads per sample:14078731.33
+
+Note that 1 sample did not pass QC (M14). 
+
+
+QC overview: 
+
+Reads were merged (simple cat), trimmed and filtered and then aligned against
+the mouse/phiX genomes to filter non-microbial reads 
+
+Trimming: Atria 
+Adapters: Nextera PE
+Length filtering: 75-200bp 
+Quality filtering: Q20
+polyG trimming: TRUE
+bowtie2: very-sensitive 
+
+
+## Taxonomic profiling 
+
+Post-QC reads were profiled using MetaPhlAn4 and mOTUs3. High sensitivity presets
+were used in both cases, to increase the number of identified taxa. 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+library(microViz)
+library(ComplexHeatmap)
+library(ggplotify)
+source("../scripts/shotgun_analysis_utils.R")
+source("../scripts/taxa_analysis.R")
+metaphlan_path <- "../data/metaphlan4.1/merged_table/merged_table.txt"
+conflicted::conflict_prefer_all("dplyr")
+conflicted::conflicts_prefer(vegan::diversity)
+conflicted::conflicts_prefer(purrr::map)
+dir.create("tax_figures", showWarnings = F)
+```
+
+```{r}
+metaphlan_species <- import_pseq_metag(merged_table_path = metaphlan_path,
+                                           metapath = "../data/ahr_ileum_metadata.txt",
+                                           level = "species") %>% 
+  transform()
+```
+
+Add sample IDs as column so we can annotate NMDS with names
+```{r}
+sample_ids <- rownames(meta_to_df(metaphlan_species))
+metaphlan_species <- metaphlan_species %>% 
+  ps_mutate(sampleID = sample_ids)
+```
+
+### Analysis 
+
+Relatively simple alpha-diversity metrics and beta-diversity based on bray-curtis 
+distance.
+
+#### Analysis - alpha diversity 
+
+```{r}
+cols <- c("sham"= "#012A36","fMCAO" = "#D00000",mild = "#012A36", "moderate" = "#A42CD6","severe" = "#D00000")
+alpha_metaphlan <- calc_alpha(metaphlan_species) %>% 
+  merge(meta_to_df(metaphlan_species), by=0)
+
+```
+
+plots
+
+```{r, fig.height=4, fig.width=4.5}
+plot_boxplot(alpha_metaphlan, variable_col = "condition", value_col = "Richness", comparisons_list = list(c("sham", "fMCAO")), fill_var = "condition", group.order = c("sham", "fMCAO"), cols = cols)  
+```
+```{r}
+comps <- list(c("mild", "moderate"), c("mild", "severe"), c("moderate", "severe"))
+plot_boxplot(alpha_metaphlan, variable_col = "severity", value_col = "Richness", comparisons_list = comps, fill_var = "condition", group.order = c("mild", "moderate", "severe"), multiple_groups = T, cols = cols) 
+```
+
+#### Analysis - bray-curtis 
+
+```{r}
+beta_metaphlan <-
+  calc_betadiv(transform(metaphlan_species, "arcsin"),
+               dist = "bray",
+               ord_method = "NMDS")
+
+
+beta_metaphlan_exc_severe <-
+  calc_betadiv(
+    subset_samples(transform(metaphlan_species, "arcsin"), severity != "severe"),
+    dist = "bray",
+    ord_method = "NMDS"
+  )
+```
+
+```{r}
+plot_beta_div(metaphlan_species, beta_metaphlan$Distance_Matrix, beta_metaphlan$Ordination, group_variable = "condition", cols = rev(cols[c(1,2)])) 
+
+ggsave2("tax_figures/betadiv_NMDS.pdf", device = "pdf", dpi = 300, height = 4, width = 7)
+```
+
+```{r}
+plot_beta_div(metaphlan_species, beta_metaphlan$Distance_Matrix, beta_metaphlan$Ordination, group_variable = "severity", cols = cols)
+ggsave2("tax_figures/betadiv_severity_NMDS.pdf", device = "pdf", dpi = 300, height = 4, width = 7)
+```
+
+##### Coloured by tnaA abundance
+
+```{r}
+indole_genes <- read_tsv("../data/indole_metabolism_ko_ec.txt")
+meta_path <- "../data/ahr_ileum_metadata.txt"
+ec_path <- "../data/humann/merged_table/unstrat/humann_genefamilies_ec_unstratified.tsv"
+un_path <- "../data/humann/merged_table/unstrat/humann_genefamilies_relab_unstratified.tsv"
+ko_path <- "../data/humann/merged_table/unstrat/humann_genefamilies_ko_unstratified.tsv"
+py_path <- "../data/humann/merged_table/unstrat/humann_pathabundance_relab_unstratified.tsv"
+source("../../../Metagenomics/scripts/func_analysis.R")
+func_profile <- import_func_profile(meta =meta_path,
+                                    un = un_path,
+                                    ec = ec_path,
+                                    ko = ko_path,
+                                    py = py_path, 
+                                    filter_ungrouped = T, read = T, renorm=T) %>% 
+  transform_func(transform = "relative")
+dir.create("indole_analysis", showWarnings = F)
+```
+Filter for genes of interest and add to metadata 
+
+```{r}
+ec_goi <- func_profile$EC %>% 
+  select(contains(indole_genes$EC))
+ko_goi <- func_profile$KO %>% 
+  select(contains(indole_genes %>% drop_na(KO) %>% .$KO))
+```
+
+```{r}
+meta_ec <- meta_to_df(metaphlan_species) %>% 
+  merge(ec_goi, by=0) %>% 
+  column_to_rownames("Row.names")
+sample_data(metaphlan_species) <- meta_ec
+```
+
+NMDS plots colored by abundance of indole metabolism associated enzymes - EC
+
+```{r}
+ggsave3 <- function(...) {
+  ggplot2::ggsave(...)
+  invisible()
+}
+```
+
+
+```{r}
+enzymes <- colnames(meta_to_df(metaphlan_species) %>% select(contains("EC")))
+
+map(enzymes, function(x) plot_beta_div(metaphlan_species, beta_metaphlan$Distance_Matrix, beta_metaphlan$Ordination, group_variable = x) +
+  scale_color_viridis_c(alpha = 1, option = "viridis", oob=scales::squish, guide = guide_colorbar(frame.colour = "black", ticks.colour = "white", frame.linewidth = 0.75, ticks.linewidth = 0.75, draw.ulim = F)) + 
+    ggtitle(x) + 
+    ggsave3(paste0("indole_analysis/", x, "_NMDS.pdf"), device = "pdf", dpi = 300, height = 4, width = 6))
+
+```
+
+##### Coloured by stroke severity 
+
+```{r}
+cont_pal <- c("#FFFFFF","#FFC3C6FF","#FB535EFF", "#F94A56FF","#EA2439FF", "#D51F32FF", "#B01526FF", "#9C0F20FF", "#6C000EFF")
+```
+
+
+```{r}
+plot_beta_div(metaphlan_species, beta_metaphlan$Distance_Matrix, beta_metaphlan$Ordination, group_variable = "severity_score") +
+  scale_color_gradientn(colours = cont_pal, guide = guide_colorbar(frame.colour = "black", ticks.colour = "white", frame.linewidth = 0.75, ticks.linewidth = 0.75, draw.ulim = F)) +
+    ggtitle("severity score") +
+    ggsave3("indole_analysis/severity_score_NMDS_rw.pdf", device = "pdf", dpi = 300, height = 4, width = 5)
+```
+tnaA same colors as stroke severity 
+
+```{r}
+plot_beta_div(metaphlan_species, beta_metaphlan$Distance_Matrix, beta_metaphlan$Ordination, group_variable = "EC.4.1.99.1_Tryptophanase") +
+  scale_color_gradientn(colours = cont_pal, guide = guide_colorbar(frame.colour = "black", ticks.colour = "white", frame.linewidth = 0.75, ticks.linewidth = 0.75, draw.ulim = F)) +
+    ggtitle("EC.4.1.99.1_Tryptophanase \n (relative abundance)") +
+    ggsave3("indole_analysis/EC.4.1.99.1_Tryptophanase_NMDS_alt_col.pdf", device = "pdf", dpi = 300, height = 4, width = 5.5)
+```
+
+### Taxonomic composition 
+
+```{r, fig.height=8, fig.width=14}
+metaphlan_species <- ps_arrange(metaphlan_species, "severity_score")
+p <- plot_taxonomic_comp(metaphlan_species, "Species", "severity", n_taxa = 14, ord=c("sham", "moderate", "severe")) + 
+  theme(strip.background = element_rect(fill="white", color = "black"),
+        strip.text = element_text(size=18))
+print(p)
+```
+
+```{r, fig.height=8, fig.width=14}
+metaphlan_species_stroke <- ps_arrange(metaphlan_species, "severity_score") %>% 
+  subset_samples(condition == "fMCAO")
+p <- plot_taxonomic_comp(metaphlan_species_stroke, "Species", "severity", n_taxa = 14, ord=c("moderate", "severe")) + 
+  theme(strip.background = element_rect(fill="white", color = "black"),
+        strip.text = element_text(size=18))
+print(p)
+```
+```{r}
+ggsave(filename = "tax_figures/taxonomic_comp_fMCAO_metaphlan.pdf", width = 14, height = 8, dpi=300, device = "pdf")
+```
+
+
+## Differential abundance 
+
+### Filtering 
+
+```{r}
+metaphlan_species_filt <- metaphlan_species %>% 
+  microViz::tax_filter(min_prevalence = 0.33, prev_detection_threshold = 0, min_sample_abundance =1e-3, use_counts = F) 
+```
+
+Full dataset - not excluding the extreme samples with severe weight loss
+
+consider adjusting for severity instead of separating 
+
+### All 
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+maaslin2_tax(metaphlan_species_filt, out = "tax_figures/maaslin2_species_all", fixed = "condition", max_significance = 0.1)
+```
+### Sham vs moderate
+
+Excluding extreme samples 
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+metaphlan_species_moderate <- metaphlan_species_filt %>% 
+  subset_samples(severity != "severe") 
+maaslin2_tax(metaphlan_species_moderate, out = "tax_figures/maaslin2_species_moderate", fixed = "condition", max_significance = 0.1)
+```
+
+#### Fold change 
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+fc_res_moderate <- tax_fold_change(subset_samples(metaphlan_species_filt, severity != "severe"), var = "condition", case = "fMCAO", ctrl = "sham")
+```
+
+
+Final plot 
+
+```{r}
+fc_res_moderate_sig <- fc_res_moderate$res %>% 
+  filter(p.adj <= 0.1) %>% 
+  mutate(da = TRUE) %>% 
+  arrange(log2FC) %>%
+  rownames_to_column("taxon") %>% 
+  mutate(taxon = factor(taxon, levels = unique(taxon))) %>% 
+  mutate(Group = case_when(log2FC < 0 ~ "Sham",
+                           TRUE ~ "fMCAO")) %>% 
+  separate(taxon, into = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"), sep = "\\|")
+
+```
+
+```{r}
+ggplot(fc_res_moderate_sig, aes(x =da , y = fct_reorder(Species, log2FC))) + 
+  geom_point(aes(fill=abs(log2FC), color = abs(log2FC)), alpha = 0.75, shape=21, size=10)  +
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 16, face = "bold", 
+                             angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 16), 
+  legend.text = element_text(size = 14, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 16, face = "bold"), 
+  panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+  panel.background = element_rect(fill = "#FFFFFF"),
+  legend.position = "right") + 
+  scale_fill_gradient2(low ="#FCEDED", mid = "#E14141", high = "#780101", midpoint = 6,
+                       guide = guide_colorbar(frame.colour = "black", ticks.colour = "white", frame.linewidth = 0.75, ticks.linewidth = 0.75, draw.ulim = F),limits=c(0, 12.5)) + 
+  scale_color_gradient2(low ="#FCEDED", mid = "#E14141", high = "#780101", midpoint = 6) + 
+  cowplot::theme_cowplot() + 
+  theme(axis.line.x = element_blank(), 
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank()
+       ) + 
+  ylab("Taxon") + 
+  annotate("rect", xmin = 0.75, xmax = 1.25, ymin = 0.25, ymax = 20,
+           alpha = .1,fill = "#424143") +
+  coord_cartesian(clip="off") + 
+  ggtitle("Sham vs Moderate") +
+  theme(plot.title = element_text(hjust = 0.5))
+ggsave(filename = "tax_figures/fc_sham_vs_moderate.pdf", device = "pdf", dpi = 300,
+      height = 7, width=8)
+```
+
+
+ ### Sham vs severe
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+metaphlan_species_severe <- metaphlan_species_filt %>% 
+  subset_samples(severity != "moderate") 
+maaslin2_tax(metaphlan_species_severe, out = "tax_figures/maaslin2_species_severe", fixed = "condition", max_significance = 0.1)
+```
+#### Fold change 
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+fc_res_severe <- tax_fold_change(subset_samples(metaphlan_species_filt, severity != "moderate"), var = "condition", 
+                 case = "fMCAO", ctrl = "sham")
+```
+
+Final plot 
+
+```{r}
+fc_res_severe_sig <- fc_res_severe$res %>% 
+  filter(p.adj <= 0.1) %>% 
+  mutate(da = TRUE) %>% 
+  arrange(log2FC) %>%
+  rownames_to_column("taxon") %>% 
+  mutate(taxon = factor(taxon, levels = unique(taxon))) %>% 
+  mutate(Group = case_when(log2FC < 0 ~ "Sham",
+                           TRUE ~ "fMCAO")) %>% 
+  separate(taxon, into = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"), sep = "\\|") %>% 
+  group_by(Group) %>% 
+  slice_max(abs(log2FC), n= 20)
+```
+
+```{r}
+ggplot(fc_res_severe_sig, aes(x =da , y = fct_reorder(Species, log2FC))) + 
+  geom_point(aes(fill=abs(log2FC), color = abs(log2FC)), alpha = 0.75, shape=21, size=10)  +
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 16, face = "bold", 
+                             angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 16), 
+  legend.text = element_text(size = 14, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 16, face = "bold"), 
+  panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+  panel.background = element_rect(fill = "#FFFFFF"),
+  legend.position = "right") + 
+  scale_fill_gradient2(low ="#FCEDED", mid = "#E14141", high = "#780101", midpoint = 6.5,
+                       guide = guide_colorbar(frame.colour = "black", ticks.colour = "white", frame.linewidth = 0.75, ticks.linewidth = 0.75, draw.ulim = F),limits=c(0, 13.5)) + 
+  scale_color_gradient2(low ="#FCEDED", mid = "#E14141", high = "#780101", midpoint = 6.5) +
+  guides(size=guide_legend(override.aes = list(fill="#D7D6D6", color="#D7D6D6"))) +
+  cowplot::theme_cowplot() + 
+  theme(axis.line.x = element_blank(), 
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank()
+       ) + 
+  ylab("Taxon") + 
+  annotate("rect", xmin = 0.75, xmax = 1.25, ymin = 20.5, ymax = 21.5,
+           alpha = .1,fill = "#F7921E") +
+  annotate("rect", xmin = 0.75, xmax = 1.25, ymin = 0.5, ymax = 20.5,
+           alpha = .1,fill = "#424143") +
+  coord_cartesian(clip="off") + 
+  ggtitle("Sham vs Severe") +
+  theme(plot.title = element_text(hjust = 0.5))
+ggsave(filename = "tax_figures/fc_sham_vs_severe.pdf", device = "pdf", dpi = 300,
+      height = 7, width=8)
+```
+### Moderate vs severe
+
+```{r}
+metaphlan_species_fMCAO <- metaphlan_species_filt %>% 
+  subset_samples(severity != "sham") 
+maaslin2_tax(metaphlan_species_fMCAO, out = "maaslin2_species_fMCAO", fixed = "severity", max_significance = 0.1)
+```
+### Heatmap
+
+Get species intersect 
+```{r}
+species_overlap <- unique(c(fc_res_moderate_sig$Species, fc_res_severe_sig$Species))
+```
+
+
+```{r}
+df_hmap <- metaphlan_species_filt %>% 
+  psmelt() %>% 
+  filter(Species %in% species_overlap) %>%
+mutate(Rel_abundance = Abundance * 100) %>% 
+  group_by(Species, severity) %>% 
+  summarise(Mean_Abundance = mean(Abundance))
+
+df_hmap$severity <- factor( as.character(df_hmap$severity), levels=c("mild", "moderate", "severe"))
+
+df_hmap <- df_hmap[order(df_hmap$severity),]
+```
+
+
+
+Heatmap of colonisation
+
+```{r}
+hmap_mat <- df_hmap %>% 
+  select(Mean_Abundance, Species, severity) %>% 
+  pivot_wider(names_from=severity, values_from=Mean_Abundance) %>% 
+  column_to_rownames("Species") %>% 
+  as.matrix()
+
+col_an <- data.frame(row.names = colnames(hmap_mat), severity = colnames(hmap_mat))
+column_ha <- HeatmapAnnotation(df=col_an, col = list(severity = c("mild" = cols[[3]], "moderate" = cols[[4]], "severe" = cols[[5]]))) 
+```
+
+Order rows 
+```{r}
+row_ord <- c("s__Escherichia_coli", "s__Muribaculum_gordoncarteri", "s__GGB1576_SGB2167", "s__GGB24132_SGB35935","s__Paramuribaculum_intestinale", "s__Duncaniella_muris", "s__Bacteroides_muris",
+  "s__Adlercreutzia_muris","s__Candidatus_Arthromitus_sp_SFB_mouse", "s__Dubosiella_newyorkensis", "s__Duncaniella_freteri",  "s__Faecalibaculum_rodentium", "s__GGB14001_SGB21428", "s__GGB14013_SGB21440", "s__GGB25041_SGB36960", "s__GGB27861_SGB40295", "s__GGB27866_SGB40300", "s__GGB27873_SGB40307", "s__GGB27885_SGB40319", "s__GGB27890_SGB40324", "s__GGB27892_SGB40326", "s__GGB27893_SGB40327", "s__GGB28999_SGB41715", "s__GGB30045_SGB42945", "s__GGB46152_SGB63920", "s__GGB73359_SGB46611", "s__Granulimonas_faecalis", "s__Lactobacillus_johnsonii", "s__Lactobacillus_taiwanensis", "s__Muribaculaceae_bacterium", "s__Muribaculaceae_bacterium_Isolate_013_NCI", "s__Parasutterella_excrementihominis", "s__Prevotella_sp_PCHR", "s__Turicimonas_muris")
+
+```
+
+
+```{r, fig.height=3.5, fig.width=8}
+hmap_ord <- hmap_mat[, rownames(col_an)]
+hmap_ord <- hmap_ord[row_ord, ]
+rownames(hmap_ord) <- gsub("\\[.*", "", rownames(hmap_ord))
+hmap_log10 <- log10(hmap_ord + 1e-6)
+
+hm <- Heatmap(hmap_log10, top_annotation=column_ha, cluster_columns=F,cluster_rows = F, show_column_names=F, col=rev(RColorBrewer::brewer.pal(9, "RdBu")))
+hm
+p <- as.ggplot(grid.grabExpr(draw(hm, heatmap_legend_side = "right",annotation_legend_side = "right")))
+ggsave("tax_figures/da_taxa_metagenomic_mean.pdf", p, device = "pdf", width=8, height = 3.5, 
+       dpi=300)
+
+p
+```
+
+
+### tnaA encoding 
+
+```{r}
+# list comes from here: https://academic.oup.com/femsre/article/34/4/426/538792
+indole_species <-c("s__Akkermansia_muciniphila", "s__Escherichia_coli", "s__Escherichia", "s__Corynebacterium_acnes", "s__Enterococcus_faecalis", "s__Bacteroides_thetaiotaomicron", "s__Bacteroides eggerthii", "s__Bacteroides_ovatus", "s__Bacteroides_acidifaciens", "s__Bacteroides_xylanisolvens", "s__Bacteroides_stercoris", "s__Bacteroides_intestinalis", "s__Bacteroides_uniformis", "s__Bacteroides_luti", "s__Desulfovibrio_vulgaris", "s__Escherichia_albertii", "s__Escherichia_fergusonii", "s__Fusobacterium_nucleatum", "s__Klebsiella_oxytoca", "s__Porphyromonas_gingivalis")
+```
+
+
+```{r}
+metaphlan_species_indole <- metaphlan_species %>%
+  transform("arcsin") %>% 
+  ps_melt() %>% 
+  filter(grepl(paste(indole_species, collapse = "|"), Species)) 
+
+```
+
+
+```{r}
+list_int_taxa <- unique(metaphlan_species_indole$OTU)
+indole_producer_plots <- map(list_int_taxa, function(x)
+  metaphlan_species_indole %>%
+    filter(OTU == x) %>%
+    ggstripchart(
+      x = "condition",
+      y = "Abundance",
+      ylab = "arcsin transformed \n abundance",
+      palette = cols,
+      error.plot = "errorbar",
+      color = "condition",
+      add =c("mean_sd"),
+      size=3,
+      add.params = list(color = "black", size=0.25),
+      order = c("sham", "fMCAO"),
+      position = position_jitterdodge(0.1),
+      title = unique(.$Species)
+    ) +
+    stat_compare_means(comparisons = list(c("sham", "fMCAO")),
+                       method = "wilcox.test",
+                       label = "p.format"))
+names(indole_producer_plots) <- c("A. muciniphila", "E. coli", "B. acidifaciens")
+imap(indole_producer_plots, function(.x, .y) ggsave(paste0("tax_figures/", .y, "_dotplot.pdf"), .x, device = "pdf", dpi=300, height = 4.5, width = 5))
+```
+```{r}
+indole_producer_plots_sev <- map(list_int_taxa, function(x)
+  metaphlan_species_indole %>%
+    filter(OTU == x) %>%
+    ggstripchart(
+      x = "severity",
+      y = "Abundance",
+      ylab = "arcsin transformed \n abundance",
+      palette = cols,
+      error.plot = "errorbar",
+      color = "severity",
+      add =c("mean_sd"),
+      size=3,
+      add.params = list(color = "black", size=0.25),
+      order = c("sham", "moderate", "severe"),
+      position = position_jitterdodge(0.1),
+      title = unique(.$Species)
+    ) +
+    stat_compare_means(comparisons = list(c("sham", "moderate"), c("sham", "severe"), c("moderate", "severe")),
+                       method = "wilcox.test",
+                       label = "p.format"))
+names(indole_producer_plots_sev) <- c("A. muciniphila", "E. coli", "B. acidifaciens")
+imap(indole_producer_plots_sev, function(.x, .y) ggsave(paste0("tax_figures/", .y, "_sev_dotplot.pdf"), .x, device = "pdf", dpi=300, height = 4.5, width = 5))
+```
+
+
+```{r}
+da_sham_severe <- read_tsv("maaslin2_species_severe/significant_results.tsv") %>% 
+  slice_max(order_by = abs(coef), n = 20)
+da_sham_moderate <- read_tsv("maaslin2_species_moderate/significant_results.tsv") %>% 
+  slice_max(order_by = abs(coef), n = 20)
+```
+
+

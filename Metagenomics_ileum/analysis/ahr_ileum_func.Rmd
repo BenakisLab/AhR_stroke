@@ -1,0 +1,698 @@
+---
+title: "ahr_ileum_func"
+author: "Adam Sorbie"
+date: "2023-06-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Analysis of functional profiles from ileum content of sham/stroke mice - AHR project
+
+This document contains code to analyse functional profiles produced from 150bp PE
+Illumina Nextseq sequencing of DNA extracted from the ileum content of sham
+and stroke (fMCAO) mice. 
+
+Sequencing Methods overview: 
+
+Platform: Illumina Nextseq
+Adapters: Nextera PE
+Paired: TRUE
+Read length: 150bp
+Depth: 2Gbp (approximate target)
+Avg. reads per sample:14078731.33
+
+Note that 1 sample did not pass QC (M14). 
+
+
+QC overview: 
+
+Reads were merged (simple cat), trimmed and filtered and then aligned against
+the mouse/phiX genomes to filter non-microbial reads 
+
+Trimming: Atria 
+Adapters: Nextera PE
+Length filtering: 75-200bp 
+Quality filtering: Q20
+polyG trimming: TRUE
+bowtie2: very-sensitive 
+
+
+## Functional profiling 
+
+Post-QC reads were profiled using HUMAnN 3.7 against the uniref50 database. 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+source("../../../Metagenomics/scripts/func_analysis.R")
+meta_path <- "../data/ahr_ileum_metadata.txt"
+ec_path <- "../data/humann/merged_table/unstrat/humann_genefamilies_ec_unstratified.tsv"
+ko_path <- "../data/humann/merged_table/unstrat/humann_genefamilies_ko_unstratified.tsv"
+py_path <- "../data/humann/merged_table/unstrat/humann_pathabundance_relab_unstratified.tsv"
+uniref_path <- "../data/humann/merged_table/unstrat/humann_genefamilies_relab_unstratified.tsv"
+conflicted::conflict_prefer_all("dplyr")
+conflicted::conflict_prefer_all("purrr")
+dir.create("func_figures", showWarnings = F)
+```
+
+```{r}
+func_profile <- import_func_profile(meta = meta_path,
+                                    un = uniref_path,
+                                    ec = ec_path, ko = ko_path,
+                                    py = py_path, filter_ungrouped = T, 
+                                    read = T, renorm=T)
+```
+
+### Analysis 
+
+PCoA plot and feature (UNIREF, EC, KO nd PY) DA, specific indole metabolism focused analysis 
+
+
+With all samples 
+
+```{r}
+cols <- c("sham" = "#424143","fMCAO" = "#F7921E")
+sev_cols <- c("sham" = "#424143",mild = "#424143", "moderate" = "#F7921E","severe" = "#D00000")
+```
+
+```{r}
+plot_pcoa(func_profile, what = "UNIREF", var = "condition", colours = cols)
+```
+```{r}
+plot_pcoa(func_profile, what = "KO", var = "condition", colours = cols, size=4)
+ggsave(filename = "func_figures/KO_PCoA.pdf", width = 9, height = 6, dpi=300, device = "pdf")
+```
+
+```{r}
+plot_pcoa(func_profile, what = "EC", var = "condition", colours = cols, size = 4, plot = "MDS")
+ggsave(filename = "func_figures/EC_PCoA.pdf", width = 9, height = 6, dpi=300, device = "pdf")
+```
+
+
+```{r}
+plot_pcoa(func_profile, what = "pathways", var = "condition", colours = cols, size = 4)
+ggsave(filename = "func_figures/PY_PCoA.pdf", width = 9, height = 6, dpi=300, device = "pdf")
+```
+
+```{r}
+plot_pcoa(func_profile, what = "KO", var = "severity", colours = sev_cols)
+ggsave(filename = "func_figures/KO_PCoA_sev.pdf", width = 9, height = 6, dpi=300, device = "pdf")
+```
+```{r}
+plot_pcoa(func_profile, what = "EC", var = "severity", colours = sev_cols)
+ggsave(filename = "func_figures/EC_PCoA_sev.pdf", width = 9, height = 6, dpi=300, device = "pdf")
+```
+
+```{r}
+plot_pcoa(func_profile, what = "pathways", var = "severity", colours = sev_cols)
+ggsave(filename = "func_figures/PY_PCoA_sev.pdf", width = 9, height = 6, dpi=300, device = "pdf")
+```
+
+#### fMCAO comparison
+
+```{r}
+func_profile_fMCAO <- subset_samples_func(func_profile, "severity != 'mild'")
+```
+
+```{r}
+plot_pcoa(func_profile_fMCAO, what = "pathways", var = "severity", colours = sev_cols, size = 4)
+ggsave(filename = "func_figures/PY_PCoA_fMCAO.pdf", width = 9, height = 6, dpi=300, device = "pdf")
+```
+
+```{r}
+plot_pcoa(func_profile_fMCAO, what = "KO", var = "severity", colours = sev_cols)
+ggsave(filename = "func_figures/KO_PCoA_fMCAO.pdf", width = 9, height = 6, dpi=300, device = "pdf")
+```
+```{r}
+plot_pcoa(func_profile_fMCAO, what = "EC", var = "severity", colours = sev_cols)
+ggsave(filename = "func_figures/EC_PCoA__fMCAO.pdf", width = 9, height = 6, dpi=300, device = "pdf")
+```
+
+## Pairwise-feature testing 
+
+### MaAsLin2
+
+#### Sham vs fMCAO 
+
+```{r}
+func_profile_filt <- filter_func(func_profile, abund=1e-4, prev=0.3,renorm = T)
+```
+
+
+UNIREF
+```{r}
+#maaslin2_func(func_profile_filt, feattype = "UNIREF", out = "maaslin2_UNIREF_all", fixed = "condition", max_significance=0.05, cores = 10)
+```
+
+
+KO
+```{r}
+maaslin2_func(func_profile_filt, feattype = "KO", out = "maaslin2_KO_all", fixed = "condition", max_significance=0.1)
+```
+
+EC
+```{r}
+maaslin2_func(func_profile_filt, feattype = "EC", out = "maaslin2_EC_all", fixed = "condition",max_significance=0.1)
+```
+PY
+```{r}
+maaslin2_func(func_profile_filt, feattype = "pathways", out = "maaslin2_PY_all", fixed = "condition", max_significance=0.1)
+```
+DA pathway figure as in Zhou et al 2022, Cell
+
+#### Sham vs Moderate 
+KO
+```{r}
+func_profile %>% 
+  subset_samples_func("severity != 'severe'") %>% 
+filter_func(abund=1e-4, prev=0.33,renorm = T) %>% 
+  maaslin2_func(feattype = "KO", out = "maaslin2_KO_moderate", fixed = "condition", max_significance=0.1)
+```
+
+EC
+```{r}
+func_profile %>% 
+  subset_samples_func("severity != 'severe'") %>% 
+filter_func(abund=1e-4, prev=0.33,renorm = T) %>% 
+  maaslin2_func(feattype = "EC", out = "maaslin2_EC_moderate", fixed = "condition", max_significance=0.1)
+```
+PY 
+```{r}
+func_profile %>% 
+  subset_samples_func("severity != 'severe'") %>% 
+filter_func(abund=1e-4, prev=0.33,renorm = T) %>% 
+  maaslin2_func(feattype = "pathways", out = "maaslin2_PY_moderate", fixed = "condition", max_significance=0.1)
+```
+
+
+#### Sham vs Severe 
+KO
+```{r}
+func_profile %>% 
+  subset_samples_func("severity != 'moderate'") %>% 
+filter_func(abund=1e-4, prev=0.33,renorm = T) %>% 
+  maaslin2_func(feattype = "KO", out = "maaslin2_KO_severe", fixed = "condition", max_significance=0.1)
+```
+
+EC
+```{r}
+func_profile %>% 
+  subset_samples_func("severity != 'moderate'") %>% 
+filter_func(abund=1e-4, prev=0.33,renorm = T) %>% 
+  maaslin2_func(feattype = "EC", out = "maaslin2_EC_severe", fixed = "condition", max_significance=0.1)
+```
+PY
+```{r}
+func_profile %>% 
+  subset_samples_func("severity != 'moderate'") %>% 
+filter_func(abund=1e-4, prev=0.33,renorm = T) %>% 
+  maaslin2_func(feattype = "pathways", out = "maaslin2_PY_severe", fixed = "condition", max_significance=0.1)
+```
+
+### Feature fold change
+
+Pathway log2 FC - sham vs moderate
+```{r}
+sham_vs_moderate_PY <- func_profile %>% 
+  subset_samples_func("severity != 'severe'") %>% 
+filter_func(abund=1e-4, prev=0.33,renorm = T) %>% 
+  feat_fold_change(feat_type = "pathways",var = "severity", case = "moderate", ctrl = "mild")
+```
+
+EC log2 FC - sham vs moderate
+```{r}
+sham_vs_moderate_EC <- func_profile %>% 
+  subset_samples_func("severity != 'severe'") %>% 
+filter_func(abund=1e-4, prev=0.33,renorm = T) %>% 
+  feat_fold_change(feat_type = "EC",var = "severity", case = "moderate", ctrl = "mild")
+```
+Pathway log2 FC - sham vs severe
+```{r}
+sham_vs_severe_PY <- func_profile %>% 
+  subset_samples_func("severity != 'moderate'") %>% 
+filter_func(abund=1e-4, prev=0.33,renorm = T) %>% 
+  feat_fold_change(feat_type = "pathways",var = "severity", case = "severe", ctrl = "mild")
+```
+
+EC log2 FC - sham vs severe
+```{r}
+sham_vs_severe_EC <- func_profile %>% 
+  subset_samples_func("severity != 'moderate'") %>% 
+filter_func(abund=1e-4, prev=0.33,renorm = T) %>% 
+  feat_fold_change(feat_type = "EC",var = "severity", case = "severe", ctrl = "mild")
+```
+
+Pathway log2 FC - moderate vs severe
+```{r}
+moderate_vs_severe_PY <- func_profile %>% 
+  subset_samples_func("severity != 'mild'") %>% 
+filter_func(abund=1e-4, prev=0.33,renorm = T) %>% 
+  feat_fold_change(feat_type = "pathways",var = "severity", case = "severe", ctrl = "moderate")
+```
+
+EC log2 FC - moderate vs severe
+```{r}
+moderate_vs_severe_EC <- func_profile %>% 
+  subset_samples_func("severity != 'mild'") %>% 
+filter_func(abund=1e-4, prev=0.33,renorm = T) %>% 
+  feat_fold_change(feat_type = "EC",var = "severity", case = "severe", ctrl = "moderate")
+```
+
+#### Better DA plots 
+
+##### log2 FC - Pathways 
+
+```{r}
+sham_vs_moderate_PY_sig <- sham_vs_moderate_PY$res %>%
+  filter(abs(log2FC) > 2 & p.adj < 0.05) %>% 
+    rownames_to_column("feature")
+
+sham_vs_moderate_PY_sig$feature <- gsub("\\.", " ", sham_vs_moderate_PY_sig$feature)
+sham_vs_moderate_PY_sig$feature <- gsub("_NA", "", sham_vs_moderate_PY_sig$feature)
+
+sham_vs_severe_PY_sig <- sham_vs_severe_PY$res %>%
+  filter(abs(log2FC) > 2 & p.adj < 0.05) %>%  
+    rownames_to_column("feature")
+
+sham_vs_severe_PY_sig$feature <- gsub("\\.", " ", sham_vs_severe_PY_sig$feature)
+sham_vs_severe_PY_sig$feature <- gsub("_NA", "", sham_vs_severe_PY_sig$feature)
+```
+
+No pathways or EC were significant (qval <0.05) for moderate vs severe comparison
+
+```{r}
+sham_vs_moderate_PY_sig %>% 
+  mutate(da = TRUE) %>% 
+  arrange(log2FC) %>%
+  mutate(feature = factor(feature, levels = unique(feature))) %>% 
+  mutate(Group = case_when(log2FC < 0 ~ "Sham",
+                           TRUE ~ "moderate")) %>% 
+ggplot(aes(x =da , y = fct_reorder(feature, log2FC))) + 
+  geom_point(aes(fill=abs(log2FC), color = abs(log2FC)), alpha = 0.75, shape=21, size=10)  +
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 16, face = "bold", 
+                             angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 16), 
+  legend.text = element_text(size = 14, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 16, face = "bold"), 
+  panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+  panel.background = element_rect(fill = "#FFFFFF"),
+  legend.position = "right") + 
+  scale_fill_gradient2(low ="#FCEDED", mid = "#E14141", high = "#780101", midpoint = 12.5,
+                       guide = guide_colorbar(frame.colour = "black", ticks.colour = "white", frame.linewidth = 0.75, ticks.linewidth = 0.75, draw.ulim = F),limits=c(0, 25)) + 
+  scale_color_gradient2(low ="#FCEDED", mid = "#E14141", high = "#780101", midpoint = 12.) + 
+  cowplot::theme_cowplot() + 
+  theme(axis.line.x = element_blank(), 
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.title.y = element_blank()
+       ) + 
+  annotate("rect", xmin = 0.75, xmax = 1.25, ymin = 0.5, ymax = 6.5,
+           alpha = .1,fill = "#424143") +
+  coord_cartesian(clip="off") + 
+  ggtitle("Sham vs Moderate") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggsave(filename = "func_figures/log2FC_sham_vs_moderate_PY.pdf", device = "pdf", dpi = 300,
+      height = 10, width=12)
+```
+
+```{r}
+sham_vs_severe_PY_sig %>% 
+  mutate(da = TRUE) %>% 
+  arrange(log2FC) %>%
+  mutate(feature = factor(feature, levels = unique(feature))) %>% 
+  mutate(Group = case_when(log2FC < 0 ~ "Sham",
+                           TRUE ~ "severe")) %>% 
+ggplot(aes(x =da , y = fct_reorder(feature, log2FC))) + 
+  geom_point(aes(fill=abs(log2FC), color = abs(log2FC)), alpha = 0.75, shape=21, size=10)  +
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 30, face = "bold", 
+                             angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 30), 
+  legend.text = element_text(size = 28, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 30, face = "bold"), 
+  panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+  panel.background = element_rect(fill = "#FFFFFF"),
+  legend.position = "right") + 
+  scale_fill_gradient2(low ="#FCEDED", mid = "#E14141", high = "#780101", midpoint = 15,
+                       guide = guide_colorbar(frame.colour = "black", ticks.colour = "white", frame.linewidth = 0.75, ticks.linewidth = 0.75, draw.ulim = F),limits=c(0, 30)) + 
+  scale_color_gradient2(low ="#FCEDED", mid = "#E14141", high = "#780101", midpoint = 15) + 
+  cowplot::theme_cowplot() + 
+  theme(axis.line.x = element_blank(), 
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.title.y = element_blank()
+       ) + 
+   annotate("rect", xmin = 0.75, xmax = 1.25, ymin = 66.5, ymax = 67.5,
+           alpha = .1,fill = "#F7921E") +
+  annotate("rect", xmin = 0.75, xmax = 1.25, ymin = 0.25, ymax = 66.4,
+           alpha = .1,fill = "#424143") +
+  coord_cartesian(clip="off") + 
+  ggtitle("Sham vs Severe") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggsave(filename = "func_figures/log2FC_sham_vs_severe_PY.pdf", device = "pdf", dpi = 300,
+      height = 20, width=23.5)
+
+```
+
+
+##### log2 FC - EC
+
+##### Maaslin2 - Pathways
+
+filter by pval or coefficient? 
+```{r}
+sig_res_py_all <- read_tsv("maaslin2_PY_all/significant_results.tsv") %>%
+  mutate(log2FC = log2(exp(coef * -1))) %>% 
+  filter(abs(log2FC) >= 0.58)
+
+
+sig_res_py_moderate <- read_tsv("maaslin2_PY_moderate/significant_results.tsv") %>% 
+  mutate(log2FC = log2(exp(coef * -1))) %>% 
+  filter(abs(log2FC) >= 0.58)
+
+sig_res_py_severe <- read_tsv("maaslin2_PY_severe/significant_results.tsv") %>%
+  mutate(log2FC = log2(exp(coef * -1))) %>% 
+  filter(abs(log2FC) >= 0.58)
+
+# for interest check overlap
+overlap_py <- Reduce(intersect, list(sig_res_py_all$feature,
+                                  sig_res_py_moderate$feature,
+                                  sig_res_py_severe$feature))
+```
+```{r}
+sig_res_py_moderate$feature <- gsub("\\.", " ", sig_res_py_moderate$feature)
+sig_res_py_moderate$feature <- gsub("_NA", "", sig_res_py_moderate$feature)
+```
+
+```{r}
+sig_res_py_moderate %>% 
+  filter(qval <= 0.1) %>% 
+  mutate(da = TRUE) %>% 
+  arrange(log2FC) %>%
+  mutate(feature = factor(feature, levels = unique(feature))) %>% 
+  mutate(Group = case_when(log2FC < 0 ~ "Sham",
+                           TRUE ~ "moderate")) %>% 
+ggplot(aes(x =da , y = fct_reorder(feature, log2FC))) + 
+  geom_point(aes(fill=abs(log2FC), color = abs(log2FC)), alpha = 0.75, shape=21, size=10)  +
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 16, face = "bold", 
+                             angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 16), 
+  legend.text = element_text(size = 14, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 16, face = "bold"), 
+  panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+  panel.background = element_rect(fill = "#FFFFFF"),
+  legend.position = "right") + 
+  scale_fill_gradient2(low ="#FCEDED", mid = "#E14141", high = "#780101", midpoint = 1.5,
+                       guide = guide_colorbar(frame.colour = "black", ticks.colour = "white", frame.linewidth = 0.75, ticks.linewidth = 0.75, draw.ulim = F),limits=c(0.5, 2.25)) + 
+  scale_color_gradient2(low ="#FCEDED", mid = "#E14141", high = "#780101", midpoint = 1.5) + 
+  cowplot::theme_cowplot() + 
+  theme(axis.line.x = element_blank(), 
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.title.y = element_blank()
+       ) + 
+  annotate("rect", xmin = 0.75, xmax = 1.25, ymin = 11.6, ymax = 22.5,
+           alpha = .1,fill = "#F7921E") +
+  annotate("rect", xmin = 0.75, xmax = 1.25, ymin = 0.25, ymax = 11.5,
+           alpha = .1,fill = "#424143") +
+  coord_cartesian(clip="off") + 
+  ggtitle("Sham vs Moderate") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# ggsave(filename = "func_figures/fc_sham_vs_moderate_PY.pdf", device = "pdf", dpi = 300,
+#       height = 10, width=12)
+```
+```{r}
+sig_res_py_severe$feature <- gsub("\\.", " ", sig_res_py_severe$feature)
+sig_res_py_severe$feature <- gsub("_NA", "", sig_res_py_severe$feature)
+```
+
+```{r}
+sig_res_py_severe %>% 
+  filter(qval <= 0.1) %>% 
+  mutate(da = TRUE) %>% 
+  arrange(log2FC) %>%
+  mutate(feature = factor(feature, levels = unique(feature))) %>% 
+  mutate(Group = case_when(log2FC < 0 ~ "Sham",
+                           TRUE ~ "severe")) %>% 
+ggplot(aes(x =da , y = fct_reorder(feature, log2FC))) + 
+  geom_point(aes(fill=abs(log2FC), color = abs(log2FC)), alpha = 0.75, shape=21, size=10)  +
+  theme(legend.key=element_blank(), 
+  axis.text.x = element_text(colour = "black", size = 16, face = "bold", 
+                             angle = 90, vjust = 0.3, hjust = 1), 
+  axis.text.y = element_text(colour = "black", face = "bold", size = 16), 
+  legend.text = element_text(size = 14, face ="bold", colour ="black"), 
+  legend.title = element_text(size = 16, face = "bold"), 
+  panel.border = element_rect(colour = "black", fill = NA, size = 1.2),
+  panel.background = element_rect(fill = "#FFFFFF"),
+  legend.position = "right") + 
+  scale_fill_gradient2(low ="#FCEDED", mid = "#E14141", high = "#780101", midpoint = 1.5,
+                       guide = guide_colorbar(frame.colour = "black", ticks.colour = "white", frame.linewidth = 0.75, ticks.linewidth = 0.75, draw.ulim = F),limits=c(0.5, 2.25)) + 
+  scale_color_gradient2(low ="#FCEDED", mid = "#E14141", high = "#780101", midpoint = 1.5) + 
+  cowplot::theme_cowplot() + 
+  theme(axis.line.x = element_blank(), 
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.title.y = element_blank()
+       ) + 
+  annotate("rect", xmin = 0.75, xmax = 1.25, ymin = 37.5, ymax = 45,
+           alpha = .1,fill = "#F7921E") +
+  annotate("rect", xmin = 0.75, xmax = 1.25, ymin = 0.25, ymax = 37.4,
+           alpha = .1,fill = "#424143") +
+  coord_cartesian(clip="off") + 
+  ggtitle("Sham vs Severe") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# ggsave(filename = "func_figures/fc_sham_vs_severe_PY.pdf", device = "pdf", dpi = 300,
+#       height = 14, width=16)
+```
+
+
+##### Maaslin2 -  EC
+
+EC
+```{r}
+sig_res_ec_all <- read_tsv("maaslin2_EC_all/significant_results.tsv") %>%
+  mutate(log2FC = log2(exp(coef * -1))) %>% 
+  filter(abs(log2FC) >= 0.32)
+
+sig_res_ec_moderate <- read_tsv("maaslin2_EC_moderate/significant_results.tsv") %>%
+  mutate(log2FC = log2(exp(coef * -1)))%>% 
+  filter(abs(log2FC) >= 0.32)
+
+sig_res_ec_severe <- read_tsv("maaslin2_EC_severe/significant_results.tsv")  %>%
+  mutate(log2FC = log2(exp(coef * -1))) %>% 
+  filter(abs(log2FC) >= 0.32)
+
+overlap_ec <- Reduce(intersect, list(sig_res_ec_all$feature,
+                                  sig_res_ec_moderate$feature,
+                                  sig_res_ec_severe$feature))
+```
+```{r}
+sig_res_ko_all <- read_tsv("maaslin2_KO_all/significant_results.tsv") %>%
+  mutate(log2FC = log2(exp(coef * -1))) %>% 
+  filter(abs(log2FC) >= 0.32)
+
+sig_res_ko_moderate <- read_tsv("maaslin2_KO_moderate/significant_results.tsv") %>%
+  mutate(log2FC = log2(exp(coef * -1)))%>% 
+  filter(abs(log2FC) >= 0.32)
+
+sig_res_ko_severe <- read_tsv("maaslin2_KO_severe/significant_results.tsv")  %>%
+  mutate(log2FC = log2(exp(coef * -1))) %>% 
+  filter(abs(log2FC) >= 0.32)
+
+overlap_ko <- Reduce(intersect, list(sig_res_ko_all$feature,
+                                  sig_res_ko_moderate$feature,
+                                  sig_res_ko_severe$feature))
+```
+
+
+##### Figures 
+
+```{r}
+
+```
+
+
+### Specific indole genes
+
+Indole genes table 
+
+```{r}
+indole_genes <- read_tsv("../data/indole_metabolism_ko_ec.txt")
+indole_ko <- indole_genes %>% 
+  drop_na(KO) %>% 
+  pull(KO) %>% 
+  unique()
+indole_ec <- indole_genes %>% 
+  drop_na(EC) %>% 
+  pull(EC)
+indole_ec <- stringr::str_conv(indole_ec, "UTF-8")
+indole_ec <- c(indole_ec, "4.1.1.115")
+```
+
+```{r}
+un_search_strings <- c(read_tsv("../data/indole_metabolism_uniref.txt") %>% 
+                         pull(UniRef50_id), indole_genes$Gene)
+un_search_strings <- stringr::str_conv(un_search_strings, "UTF-8")
+un_filt <- func_profile$UNIREF %>% 
+  select(contains(un_search_strings))
+
+ko_filt <- func_profile$KO %>% 
+  select(contains(c(indole_ko, indole_genes$Gene)))
+
+ec_filt_asin <- func_profile %>% 
+  transform_func("arcsin", features_are_rows = F) 
+ec_filt_asin <- ec_filt_asin$EC %>%
+  select(contains(indole_ec))
+
+ec_filt_rel <- func_profile$EC %>% 
+  select(contains(indole_ec))
+```
+```{r}
+dir.create("func_figures/indole_genes", showWarnings = F)
+```
+
+
+```{r}
+ec_ind_gene <- c("EC:4.1.99.1_Tryptophanase", "EC:4.1.1.28_Aromatic-L-amino-acid decarboxylase", "EC:2.6.1.57_Aromatic-amino-acid transaminase", "EC:4.2.1.167_NA", "EC:1.1.1.399_NA", "EC:2.6.1.39_2-aminoadipate transaminase", "EC:2.6.1.5_Tyrosine transaminase", "EC:2.6.1.1_Aspartate transaminase")
+```
+
+
+```{r}
+for (i in colnames(ec_filt_asin)){
+  sub <- ec_filt_asin %>% select(i) %>% 
+    merge(func_profile$Metadata, by=0) %>% 
+    rename(ec = i)
+   sub[, "condition"] <- factor(sub[, "condition"], levels = c("sham", "fMCAO"))
+
+  p <- ggplot(sub, aes(x = condition, y = ec, color=condition)) + 
+    geom_jitter(position = position_jitterdodge(jitter.width = 0.1), size=3.75) + 
+    scale_color_manual(values = cols) + 
+    theme_cowplot() + 
+    ylab(paste0(i, "\n", "Asin(sqrt(rel. abundance))")) +
+    ggtitle(i) + 
+    theme(axis.title = element_text(size=14),
+          axis.text = element_text(size=12),
+          legend.position = "None") +
+  stat_summary(fun.y = median, 
+               fun.ymin = median, 
+               fun.ymax = median, 
+               geom = "crossbar", 
+               width = 0.15, color="black") +
+  stat_compare_means(method = "wilcox.test", label = "p.format", comparisons = list(c("sham", "fMCAO")))
+  name <- gsub(":", "_", i)
+  ggsave(paste0("func_figures/indole_genes/", name, ".pdf"), plot = p, device = "pdf",dpi=300, height = 4, width = 4.5)
+}
+```
+
+
+```{r}
+comps <- microbiomeutilities::make_pairs(func_profile$Metadata$severity)
+for (i in colnames(ec_filt_asin)){
+  sub <- ec_filt_asin %>% select(i) %>% 
+    merge(func_profile$Metadata, by=0) %>% 
+    rename(ec = i)
+  sub[, "severity"] <- factor(sub[, "severity"], levels = c("mild", "moderate", "severe"))
+
+  p <- ggplot(sub, aes(x = severity, y = ec, color=severity, label=Row.names)) + 
+    geom_jitter(position = position_jitterdodge(jitter.width = 0.1), size=3.75) + 
+   #ggrepel::geom_text_repel() + 
+    theme_cowplot() + 
+    scale_color_manual(values = sev_cols)+ 
+    ylab(paste0(i, "\n", "Asin(sqrt(rel. abundance))")) +
+    #ylab("rel. abundance") + 
+    ggtitle(i) + 
+    theme(axis.title = element_text(size=14),
+          axis.text = element_text(size=12),
+          legend.position = "None") +
+  stat_summary(fun.y = median, 
+               fun.ymin = median, 
+               fun.ymax = median, 
+               geom = "crossbar", 
+               width = 0.15, color="black") +
+  stat_compare_means(method = "wilcox.test", label = "p.format", comparisons = comps)
+  name <- gsub(":", "_", i)
+  ggsave(paste0("func_figures/indole_genes/", name, "_severity.pdf"), plot = p, device = "pdf",dpi=300, height = 4, width = 5)
+  print(p)
+}
+
+```
+Pairwise comparisons 
+```{r}
+pairwise_comps <- list(c("mild", "moderate"), c("mild", "severe"), c("moderate", "severe"))
+for (i in colnames(ec_filt_asin)){
+  for (j in 1:length(pairwise_comps)){
+    sub <- ec_filt_asin %>% select(i) %>% 
+    merge(func_profile$Metadata, by=0) %>% 
+    rename(ec = i) %>% 
+    filter(severity %in% pairwise_comps[[j]])
+    
+  comps <- microbiomeutilities::make_pairs(sub$severity)
+  sub[, "severity"] <- factor(sub[, "severity"], levels = pairwise_comps[[j]])
+  
+  name <- gsub("_", " ", i)
+  
+  p <- ggplot(sub, aes(x = severity, y = ec, color=severity, label=Row.names)) + 
+    geom_jitter(position = position_jitterdodge(jitter.width = 0.1), size=3.75) + 
+    theme_cowplot() + 
+    scale_color_manual(values = sev_cols)+ 
+    ylab(paste0(name, "\n", "Asin(sqrt(rel. abundance))")) +
+    #ylab("rel. abundance") + 
+    theme(axis.title = element_text(size=14),
+          axis.text = element_text(size=12),
+          legend.position = "None") +
+  stat_summary(fun.y = median, 
+               fun.ymin = median, 
+               fun.ymax = median, 
+               geom = "crossbar", 
+               width = 0.15, color="black") +
+  stat_compare_means(method = "wilcox.test", label = "p.format", comparisons = comps)
+  name <- gsub(":", "_", i)
+  comparison <- paste(pairwise_comps[[j]], collapse = "_")
+  ggsave(paste0("func_figures/indole_genes/", name, "_", comparison,  "_severity.pdf"), plot = p, device = "pdf",dpi=300, height = 4, width = 4.5)
+   print(p) 
+  }
+ 
+}
+
+```
+
+
+```{r}
+ec_filt_asin %>% select("EC:4.1.99.1_Tryptophanase") %>% 
+    merge(func_profile$Metadata, by=0) %>% 
+  filter(condition != "sham") %>% 
+  plot_scatter(x="severity_score", y="EC:4.1.99.1_Tryptophanase", line_color = "firebrick1", fill_color = "firebrick1", point_color = "firebrick1", xlab="Severity score", ylab="Asin(sqrt(rel. abundance))",corr.method = "spearman")
+ggsave("func_figures/indole_genes/tnaA_severity_cor.pdf", device = "pdf", dpi=300, height = 4, width = 5)
+```
+
+
+#### Indole genes
+ 
+##### EC
+
+plot - tnaA
+
+```{r}
+ec <- indole_genes$EC
+names(ec) <- indole_genes$Gene
+```
+
+```{r}
+ec_detected <- ec[ec %in% ec_strat_meta$contrib]
+```
+
+
+```{r, fig.height=7, fig.width=12}
+imap(ec_detected,function(.x, .y) plot_contrib(ec_strat_meta, pattern = .x, ylabel = paste0(.y, "[RPK]")))
+```

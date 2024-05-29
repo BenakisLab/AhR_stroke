@@ -1,0 +1,822 @@
+---
+title: "Ileal analysis"
+author: "Adam Sorbie"
+date: "2022-08-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Analysis of Ileal data from AHR project 
+
+```{r}
+source("../scripts/analysis_functions.R")
+source("../scripts/utils.R")
+library(microViz)
+library(microbiome)
+library(ggsci)
+library(cowplot)
+library(dendextend)
+library(Tjazi)
+library(selbal)
+conflicted::conflict_prefer_all("dplyr")
+```
+
+```{r}
+data_dir <- "../data/dada2_out/"
+dir.create("figures", showWarnings = F)
+
+ps <- import_as_pseq(paste0(data_dir, "ASV_seqtab_tax.tab"),
+                     "../data/metadata.txt", 
+                     paste0(data_dir, "ASV_tree.tre"))
+
+```
+
+```{r}
+ps_norm_mouse <- subset_samples(ps, Source == "Mouse") %>% 
+  transform()
+ps_norm_human <- subset_samples(ps, Source == "Human") %>% 
+  transform()
+ps_norm <- transform(ps)
+```
+
+What questions do we want to answer here? 
+
+a) What is the composition and diversity of the human samples?
+b) What is the transfer efficiency? 
+c) Are the two groups different in terms of diversity? 
+d) Which taxa differ between the two groups? 
+e) are these likely to be indole producing taxa? 
+
+```{r}
+div_human <- calc_alpha(ps_norm_human, detection = 1)
+div_human_meta <- merge(div_human, meta_to_df(ps_norm_human), by=0)
+```
+
+### Composition 
+
+```{r}
+taxa <- c("Acidaminococcaceae", "Akkermansiaceae", "Bacteroidaceae","Bifidobacteriaceae", 
+          "Clostridia UCG-014 Order", "Enterobacterales Order", "Erysipelotrichaceae",
+          "Lachnospiraceae","Oscillospiraceae","Prevotellaceae", "Rikenellaceae","Ruminococcaceae",
+          "Tannerellaceae", "Veillonellaceae")
+
+tax_col <- c(taxa,"other")
+
+pal_fig <- pal_npg()(10)
+pal_fig <- c(pal_fig, "#E4E9B2", "#F9A620","#52414C", "#054A29", "#DCDCDC")
+names(pal_fig) <- tax_col
+ps_norm_f <- phylosmith::set_sample_order(ps_norm, treatment = "Source") %>% 
+  aggregate_taxa(level="Family")
+
+fig <- ps_norm_f %>% 
+  tax_fix(unknowns = c("")) %>%
+  ps_arrange(desc(Akkermansiaceae), .target = "otu_table") %>% 
+  comp_barplot(
+    tax_level = "Family", n_taxa = 10,
+    bar_outline_colour = "black", bar_width = 0.9, palette = pal_fig) + 
+  theme_cowplot() +
+  facet_grid(.~factor(Source_Donor, stringr::str_sort(unique(Source_Donor))),
+    scales = "free", space = "free" # these options are critically important!
+  ) + 
+  scale_y_continuous(labels = scales::percent, expand = c(0,0)) +
+  theme(
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size=22),
+        axis.text.y = element_text(size=18),
+        axis.ticks = element_blank())
+fig + 
+  rotate_x_text(angle=45)
+# Add indole concentration and diversity to plot labels 
+```
+
+```{r}
+ps_norm_human_f <- ps_reorder(ps_norm_human, sample_order = c("CB12", "CB13")) %>% 
+  aggregate_taxa(level="Family")
+
+fig <- ps_norm_human_f %>% 
+  tax_fix(unknowns = c("")) %>%
+  comp_barplot(
+    tax_level = "Family", n_taxa = 10,
+    bar_outline_colour = "black", bar_width = 0.9, palette = pal_fig) + #
+  theme_cowplot() +
+  scale_y_continuous(labels = scales::percent, expand = c(0,0)) +
+  theme(
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size=22),
+        axis.text.y = element_text(size=18),
+        axis.ticks = element_blank())
+fig + 
+  rotate_x_text(angle=45)
+# Add indole concentration and diversity to plot labels 
+ggsave("donors.pdf", fig, device = "pdf", dpi=300, height = 7.5, width = 5)
+```
+
+#### Phylum level 
+```{r}
+# phyla <- c("Actinobacteriota", "Bacteroidota", "Proteobacteria","Firmicutes",
+#           "Verrucomicrobiota")
+# 
+# phy_col <- c(phyla,"other")
+# 
+# pal_fig2 <- pal_npg()(10)
+# pal_fig2 <- c(pal_fig2, "#DCDCDC")
+# names(pal_fig2) <- phy_col
+# ps_norm_p <- phylosmith::conglomerate_taxa(ps_norm, classification = "Phylum")
+# 
+# 
+# fig <- ps_norm_p %>% 
+#   tax_fix(unknowns = c("")) %>%
+#   ps_arrange(desc(Bacteria_Verrucomicrobiota), .target = "otu_table") %>% 
+#   comp_barplot(
+#     tax_level = "Phylum", n_taxa = 5,
+#     bar_outline_colour = "black", bar_width = 0.9, palette = pal_fig2) + 
+#   theme_cowplot() +
+#   facet_grid(.~factor(Source_Donor, stringr::str_sort(unique(Source_Donor))),
+#     scales = "free", space = "free" # these options are critically important!
+#   ) + 
+#   scale_y_continuous(labels = scales::percent, expand = c(0,0)) +
+#   theme(
+#         axis.title.x = element_blank(),
+#         axis.title.y = element_text(size=22),
+#         axis.text.y = element_text(size=18),
+#         axis.ticks = element_blank())
+# fig + 
+#   rotate_x_text(angle=45)
+# # Add indole concentration and diversity to plot labels 
+```
+
+
+### Transfer efficiency
+
+How to best answer this? 
+
+
+Get percentages first - stratified by donor 
+
+number of ASVs in donor sample above 0 - baseline 
+for each mouse get number of ASVs above 0, subset by donor list and calc percentage
+```{r}
+asvtab <- ps_to_asvtab(ps_norm)
+p14_asvs <- asvtab %>% select(CB12) %>% filter(CB12 > 0) %>% rownames()
+p15_asvs <- asvtab %>% select(CB13) %>% filter(CB13 > 0) %>% rownames()
+```
+
+```{r}
+ord <- c("CB13", "CB6", "CB7", "CB3", "CB4", "CB5", "CB12", 
+         "CB10", "CB11", "CB2", "CB8", "CB9")
+ps_norm <- ps_reorder(ps_norm, ord)
+pal <- RColorBrewer::brewer.pal(7, "PuBuGn")
+p <- microbiomeutilities::plot_taxa_heatmap(ps_norm, subset.top = 20, 
+                                       transformation = "log10", VariableA = "Source_Donor", 
+                                       heatcolors = pal, 
+                                       border_color=NA, cluster_cols=F)
+```
+#### Looking specifically at those that colonise
+
+```{r}
+ps_hFMT14 <- subset_samples(ps_norm, Donor =="hFMT 14")
+ps_hFMT15 <- subset_samples(ps_norm, Donor =="hFMT 15")
+```
+
+
+```{r}
+get_colonised <- function(ps, donor, recipients) {
+  asvtab <- ps_to_asvtab(ps)
+  asvtab_donor <- asvtab[donor]
+  asvtab_recipients <- asvtab[recipients]
+  
+  asvs_donor <- asvtab_donor %>% filter(rowSums(.) > 0)
+  # filter this by above? 
+  asvs_recipients_donor <- filter_rownames(asvtab_recipients, rownames(asvs_donor))
+  
+  asvtab_recipients <- asvs_recipients_donor %>% filter(rowSums(.) > 0)
+
+  asvtab_out <- asvtab %>%
+    filter_rownames(rownames(asvtab_recipients))
+
+  return(asvtab_out)
+}
+```
+
+```{r}
+meta_hFMT14 <- meta_to_df(ps_hFMT14)
+mice_hFMT14 <- meta_hFMT14 %>% filter(Source == "Mouse")
+asvtab_col_hFMT14<- get_colonised(ps_hFMT14, donor="CB12", recipients = rownames(mice_hFMT14))
+
+colonisation_efficiencyhFMT14 <- round(nrow(asvtab_col_hFMT14) / length(p14_asvs) * 100, digits = 2)
+```
+
+```{r}
+meta_hFMT15 <- meta_to_df(ps_hFMT15)
+mice_hFMT15 <- meta_hFMT15 %>% filter(Source == "Mouse")
+asvtab_col_hFMT15<- get_colonised(ps_hFMT15, donor="CB13", recipients = rownames(mice_hFMT15))
+colonisation_efficiencyhFMT15 <-round(nrow(asvtab_col_hFMT15) / length(p15_asvs) * 100, digits = 2)
+```
+
+```{r}
+ps_hFMT14_hm <- prune_taxa(rownames(asvtab_col_hFMT14), ps_hFMT14)
+ps_hFMT15_hm <- prune_taxa(rownames(asvtab_col_hFMT15), ps_hFMT15)
+ps_hFMT_both_hm <- prune_taxa(c(rownames(asvtab_col_hFMT14), rownames(asvtab_col_hFMT15)), ps_norm)
+```
+
+```{r}
+ps_hFMT14_hm <- ps_hFMT14_hm %>% 
+  ps_arrange(Source)
+p <- microbiomeutilities::plot_taxa_heatmap(ps_hFMT14_hm, subset.top = 30, 
+                                       transformation = "clr", VariableA = "Source_Donor", 
+                                       heatcolors = pal, 
+                                       border_color=NA, cluster_cols=F, legend=F, 
+                                       annotation_legend=F, , show_colnames=F)
+```
+
+```{r}
+p2 <- microbiomeutilities::plot_taxa_heatmap(ps_hFMT15_hm, subset.top = 30, 
+                                       transformation = "clr", VariableA = "Source_Donor", 
+                                       heatcolors = pal, 
+                                       border_color=NA, cluster_cols=F, show_colnames=F)
+```
+
+```{r}
+p_final <- plot_grid(p$plot$gtable, p2$plot$gtable, ncol = 2, 
+          labels = list(paste0("Colonisation efficiency:", colonisation_efficiencyhFMT14, " %"),
+                        paste0("Colonisation efficiency:", colonisation_efficiencyhFMT15, "%")), 
+          rel_widths = c(1,1.33), align = "h", vjust = 0.5)
+p_final
+ggsave("figures/hm_colonisers.pdf", p_final, device = "pdf", dpi=300, width = 18, height = 8)
+```
+
+#### With all colonising ASVs
+
+```{r}
+ps_hFMT_both_hm <- ps_arrange(ps_hFMT_both_hm, Donor)
+p3 <- microbiomeutilities::plot_taxa_heatmap(ps_hFMT_both_hm, subset.top = 40, 
+                                       transformation = "clr", VariableA = "Source_Donor", 
+                                       heatcolors = pal, 
+                                       border_color=NA, cluster_cols=F, show_colnames=F)
+ggsave("figures/hm_colonisers-both_groups-2024.pdf", p3$plot$gtable, device = "pdf", dpi=300, width = 12, height = 5.5)
+```
+
+
+### Diversity - colonised mice 
+
+```{r}
+cols_hfmt <- c("hFMT 14"= "#4DBBD5FF","hFMT 15" = "#E64B35FF")
+```
+
+
+```{r}
+div_mice <- calc_alpha(ps_norm_mouse)
+div_mice_meta <- merge(div_mice, meta_to_df(ps_norm_mouse), by=0)
+
+comps <- list(unique(div_mice_meta$Donor))
+
+for (i in c("Richness", "Shannon.Effective", "Faiths.PD")){
+  p <- plot_boxplot(div_mice_meta, variable_col = "Donor", value_col = i, 
+             comparisons_list = comps, cols = cols_hfmt)
+  if (i == "Faiths.PD"){
+    p <- p + ylim(0, 8)
+  }
+  print(p)
+  
+}
+
+
+```
+
+bray 
+```{r}
+betadiv_mice_bray <- calc_betadiv(ps_norm_mouse, dist="bray", ord_method = "NMDS")
+plot_beta_div(ps_norm_mouse, betadiv_mice_bray$Distance_Matrix, betadiv_mice_bray$Ordination, "Donor", size=4, cols = cols_hfmt)
+ggsave("figures/betadiv_mice-bray.pdf", device = "pdf", dpi=300, height = 6, width = 8)
+```
+unifrac
+
+```{r}
+betadiv_mice_uf <- calc_betadiv(ps_norm_mouse, dist="unifrac", ord_method = "NMDS")
+plot_beta_div(ps_norm_mouse,betadiv_mice_uf$Distance_Matrix, betadiv_mice_uf$Ordination, "Donor", size=4, cols = cols_hfmt) 
+ggsave("figures/betadiv_mice-unifrac.pdf", device = "pdf", dpi=300, height = 6, width = 8)
+```
+
+wunifrac
+
+```{r}
+betadiv_mice_wf <- calc_betadiv(ps_norm_mouse, dist="wunifrac", ord_method = "NMDS")
+plot_beta_div(ps_norm_mouse,betadiv_mice_wf$Distance_Matrix, betadiv_mice_wf$Ordination, "Donor", size=4, cols = cols_hfmt) 
+ggsave("figures/betadiv_mice-wunifrac.pdf", device = "pdf", dpi=300, height = 6, width = 8)
+```
+
+gunifrac
+
+```{r}
+betadiv_mice_gf <- calc_betadiv(ps_norm_mouse, dist="gunifrac", ord_method = "NMDS")
+plot_beta_div(ps_norm_mouse,betadiv_mice_gf$Distance_Matrix, betadiv_mice_gf$Ordination, "Donor",
+              size=4, cols = cols_hfmt) 
+ggsave("figures/betadiv_mice-gunifrac.pdf", device = "pdf", dpi=300, height = 6, width = 8)
+```
+
+compositional 
+
+```{r}
+betadiv_mice_aitch <- calc_betadiv(ps_norm_mouse, dist="aitchison", ord_method = "NMDS")
+plot_beta_div(ps_norm_mouse,betadiv_mice_aitch$Distance_Matrix, betadiv_mice_aitch$Ordination, "Donor",
+              size=4, cols = cols_hfmt) 
+ggsave("figures/betadiv_mice-aitchison.pdf", device = "pdf", dpi=300, height = 6, width = 8)
+```
+
+
+#### Beta-diversity inc. human samples 
+
+bray 
+```{r}
+betadiv_bray_all <- calc_betadiv(ps_norm, dist="bray", ord_method = "NMDS")
+plot_beta_div(ps_norm, betadiv_bray_all$Distance_Matrix, betadiv_bray_all$Ordination,group_variable =  "Donor", size=4, shape = "Source", cols = cols_hfmt) 
+ggsave("figures/betadiv_all-bray.pdf", device = "pdf", dpi=300, height = 6, width = 8)
+```
+
+unifrac 
+
+```{r}
+betadiv_uf_all <- calc_betadiv(ps_norm, dist="unifrac", ord_method = "NMDS")
+plot_beta_div(ps_norm, betadiv_uf_all$Distance_Matrix, betadiv_uf_all$Ordination, group_variable = "Donor", size = 4, shape = "Source", cols = cols_hfmt) 
+ggsave("figures/betadiv_all-unifrac.pdf", device = "pdf", dpi=300, height = 6, width = 8)
+```
+wunifrac 
+
+```{r}
+betadiv_wf_all <- calc_betadiv(ps_norm, dist="wunifrac", ord_method = "NMDS")
+plot_beta_div(ps_norm, betadiv_wf_all$Distance_Matrix, betadiv_wf_all$Ordination, , group_variable = "Donor", size = 4, shape = "Source", cols = cols_hfmt) 
+ggsave("figures/betadiv_all-wunifrac.pdf", device = "pdf", dpi=300, height = 6, width = 8)
+```
+gunifrac
+
+```{r}
+betadiv_gf_all <- calc_betadiv(ps_norm, dist="gunifrac", ord_method = "NMDS")
+plot_beta_div(ps_norm, betadiv_gf_all$Distance_Matrix, betadiv_gf_all$Ordination, group_variable = "Donor", size = 4, shape = "Source", cols = cols_hfmt) 
+ggsave("figures/betadiv_all-gunifrac.pdf", device = "pdf", dpi=300, height = 6, width = 8)
+```
+
+compositional 
+
+```{r}
+betadiv_aitch_all <- calc_betadiv(ps_norm, dist="aitchison", ord_method = "NMDS")
+plot_beta_div(ps_norm, betadiv_aitch_all$Distance_Matrix, betadiv_aitch_all$Ordination, , group_variable = "Donor", size = 4, shape = "Source", cols = cols_hfmt) 
+ggsave("figures/betadiv_all-aitchison.pdf", device = "pdf", dpi=300, height = 6, width = 8)
+```
+
+### Hierarchical clustering
+
+Compositional - all data points (inc. donors)
+
+
+```{r}
+#Save as dendrogram
+ward <- as.dendrogram(hclust(betadiv_aitch_all$Distance_Matrix, method = "ward.D2"))
+#Provide color codes
+meta <- data.frame(phyloseq::sample_data(ps_norm))
+colorCode <- c(`hFMT 15` = "#E64B35FF", `hFMT 14` = "#4DBBD5FF")
+labels_colors(ward) <- colorCode[meta$Donor][order.dendrogram(ward)]
+#Plot
+pdf("figures/dendrogram_hclust.pdf", width = 7, height = 4)
+plot(ward)
+dev.off()
+```
+
+### Differential abundance
+
+Prep data
+
+```{r}
+ps_mouse_clr <- ps_norm_mouse %>% 
+  format_taxonomy() %>% 
+  microViz::tax_filter(min_prevalence = 0.33, min_total_abundance = 0) %>% 
+  transform("clr")
+
+ps_mouse_clr_g <- ps_norm_mouse %>% 
+  format_taxonomy() %>% 
+  aggregate_taxa(level = "Genus") %>%
+  microViz::tax_filter(min_prevalence = 0.33, min_total_abundance = 0) %>% 
+  transform("clr")
+
+
+ps_mouse_clr_f <- ps_norm_mouse %>% 
+  format_taxonomy() %>% 
+  aggregate_taxa(level = "Family") %>%
+  microViz::tax_filter(min_prevalence = 0.33, min_total_abundance = 0) %>% 
+  transform("clr")
+```
+
+```{r}
+mouse_counts_clr <- ps_to_asvtab(ps_mouse_clr)
+metadata_mouse <- meta_to_df(ps_mouse_clr)
+da_tax_clr <- fw_glm(x= mouse_counts_clr,
+                     f= ~ Donor, 
+                     metadata = metadata_mouse,
+                     adjust.method = "BH", 
+                     format = "brief")
+
+da_tax_clr_sig <- da_tax_clr %>% 
+  filter(`DonorhFMT 15 Pr(>|t|).BH` <= 0.05) %>% 
+  mutate(value = case_when(`DonorhFMT 15 Estimate` < 0 ~ "hFMT 14",
+                           TRUE ~ "hFMT 15"))
+```
+
+Diverging lollipop of beta values
+
+Add tnaA prevalence 
+```{r}
+da_tax_clr_sig  %>%
+    arrange(`DonorhFMT 15 Estimate`) %>%
+    mutate(feature = factor(feature, levels = feature)) %>% 
+    ggplot(
+           aes(x = feature, y = `DonorhFMT 15 Estimate`, color = value)) +
+    geom_point(size = 5) +
+    labs(y = paste("beta \n", "hFMT 14 vs hFMT 15",sep =
+                     " "),
+         x = "") +
+    theme_bw() +
+    theme(
+      axis.text.x = element_text(color = "black", size = 14),
+      axis.text.y = element_text(color = "black", size = 14),
+      axis.title.y = element_text(size = 16),
+      axis.title.x = element_text(size = 16),
+      legend.text = element_text(size = 14),
+      legend.title = element_text(size = 14),
+      legend.position = "none"
+    ) +
+    coord_flip() +
+  theme_cowplot() +
+    geom_hline(yintercept = 0, linetype = "dotted") +
+    scale_color_manual(values = cols_hfmt)
+ggsave("figures/differential_abundance_donor.pdf", device = "pdf", dpi=300, height = 5, width = 7)
+```
+#### Genus level
+
+```{r}
+da_tax_g_clr <- fw_glm(x= ps_to_asvtab(ps_mouse_clr_g),
+                     f= ~ Donor, 
+                     metadata = meta_to_df(ps_mouse_clr_g),
+                     adjust.method = "BH", 
+                     format = "brief")
+
+da_tax_clr_g_sig <- da_tax_g_clr %>% 
+  filter(`DonorhFMT 15 Pr(>|t|).BH` <= 0.1) %>% 
+  mutate(value = case_when(`DonorhFMT 15 Estimate` < 0 ~ "hFMT 14",
+                           TRUE ~ "hFMT 15"))
+```
+
+Diverging lollipop of beta values
+
+Add tnaA prevalence 
+```{r}
+da_tax_clr_g_sig  %>%
+    arrange(`DonorhFMT 15 Estimate`) %>%
+    mutate(feature = factor(feature, levels = feature)) %>% 
+    ggplot(
+           aes(x = feature, y = `DonorhFMT 15 Estimate`, color = value)) +
+    geom_point(size = 5) +
+    labs(y = paste("beta \n", "hFMT 14 vs hFMT 15",sep =
+                     " "),
+         x = "") +
+    theme_bw() +
+    theme(
+      axis.text.x = element_text(color = "black", size = 14),
+      axis.text.y = element_text(color = "black", size = 14),
+      axis.title.y = element_text(size = 16),
+      axis.title.x = element_text(size = 16),
+      legend.text = element_text(size = 14),
+      legend.title = element_text(size = 14),
+      legend.position = "none"
+    ) +
+    coord_flip() +
+  theme_cowplot() +
+    geom_hline(yintercept = 0, linetype = "dotted") +
+    scale_color_manual(values = cols_hfmt)
+ggsave("figures/differential_abundance_donor_genus.pdf", device = "pdf", dpi=300, height = 5, width = 7)
+```
+
+#### Family level
+
+
+```{r}
+da_tax_f_clr <- fw_glm(x= ps_to_asvtab(ps_mouse_clr_f),
+                     f= ~ Donor, 
+                     metadata = meta_to_df(ps_mouse_clr_f),
+                     adjust.method = "BH", 
+                     format = "brief")
+
+da_tax_clr_f_sig <- da_tax_f_clr %>% 
+  filter(`DonorhFMT 15 Pr(>|t|).BH` <= 0.25) %>% 
+  mutate(value = case_when(`DonorhFMT 15 Estimate` < 0 ~ "hFMT 14",
+                           TRUE ~ "hFMT 15"))
+```   
+
+```{r}
+da_tax_clr_f_sig  %>%
+    arrange(`DonorhFMT 15 Estimate`) %>%
+    mutate(feature = factor(feature, levels = feature)) %>% 
+    ggplot(
+           aes(x = feature, y = `DonorhFMT 15 Estimate`, color = value)) +
+    geom_point(size = 5) +
+    labs(y = paste("beta \n", "hFMT 14 vs hFMT 15",sep =
+                     " "),
+         x = "") +
+    theme_bw() +
+    theme(
+      axis.text.x = element_text(color = "black", size = 14),
+      axis.text.y = element_text(color = "black", size = 14),
+      axis.title.y = element_text(size = 16),
+      axis.title.x = element_text(size = 16),
+      legend.text = element_text(size = 14),
+      legend.title = element_text(size = 14),
+      legend.position = "none"
+    ) +
+    coord_flip() +
+  theme_cowplot() +
+    geom_hline(yintercept = 0, linetype = "dotted") +
+    scale_color_manual(values = cols_hfmt)
+ggsave("figures/differential_abundance_donor_family.pdf", device = "pdf", dpi=300, height = 5, width = 7)
+```
+
+
+### Correlations
+
+Correlate clr-transformed taxon abundance with a) urinary indole concentration b) flow cytometry data 
+
+P-value less than 0.05 and correlation threshold higher than or equal to 0.3
+```{r}
+cor_indole <- ps_mouse_clr %>% 
+  ps_melt() %>% 
+  group_by(OTU) %>% 
+  rstatix::cor_test(Abundance, Urinary_indole, method = "spearman") %>% 
+  filter(p < 0.05 & abs(cor) >=  0.3)
+
+cor_mig_dc <- ps_mouse_clr %>% 
+  ps_melt() %>% 
+  group_by(OTU) %>% 
+  rstatix::cor_test(Abundance, CD11cposMHCIIposCD11bposCD103pos, method = "spearman") %>% 
+  filter(p < 0.05 & abs(cor) >= 0.3) 
+
+cor_mig_dc1 <- ps_mouse_clr %>% 
+  ps_melt() %>% 
+  group_by(OTU) %>% 
+  rstatix::cor_test(Abundance, CD11cHighMHCIIpos, method = "spearman") %>% 
+  filter(p < 0.05 & abs(cor) >= 0.3)
+
+cor_mig_dc2 <- ps_mouse_clr %>% 
+  ps_melt() %>% 
+  group_by(OTU) %>% 
+  rstatix::cor_test(Abundance, CD11cposMHCIIpos.FITC, method = "spearman") %>% 
+  filter(p < 0.05 & abs(cor) >= 0.3)
+
+cor_mig_dc3 <- ps_mouse_clr %>% 
+  ps_melt() %>% 
+  group_by(OTU) %>% 
+  rstatix::cor_test(Abundance, CD11cHighMHCIIpos.1, method = "spearman") %>% 
+  filter(p < 0.05 & abs(cor) >= 0.3)
+```
+
+Get overlap between significant cors and DA microbes enriched in hFMT15 
+
+```{r}
+hFMT_feat <- filter(da_tax_clr_sig, `DonorhFMT 15 Estimate` > 0) %>% pull(feature)
+indole_da_overlap <- intersect(cor_indole$OTU, hFMT_feat)
+dc_da_overlap <- intersect(cor_mig_dc$OTU, hFMT_feat)
+dc1_da_overlap <- intersect(cor_mig_dc1$OTU, hFMT_feat)
+dc2_da_overlap <- intersect(cor_mig_dc2$OTU, hFMT_feat)
+dc3_da_overlap <- intersect(cor_mig_dc3$OTU, hFMT_feat)
+
+all_int_cors <- Reduce(union, list(indole_da_overlap, dc_da_overlap, 
+                      dc1_da_overlap, dc2_da_overlap, dc3_da_overlap)) %>% 
+  print()
+```
+
+Final corrplots
+
+```{r}
+plot_cor <- function(df, x, xlab, y, cor.pos) {
+  p <- df %>%
+    filter(OTU == y) %>%
+    ggscatter(
+      x = x,
+      y = "Abundance",
+      size = 3,
+      title = y,
+      color = "Donor",
+      xlab = xlab,
+      ylab = "CLR-transformed abundance"
+    ) +
+    stat_cor(label.x = cor.pos) +
+    scale_color_manual(values = cols_hfmt) +
+    scale_fill_manual(values = cols_hfmt) +
+    theme_cowplot(font_size = 15) +
+    theme(plot.title = element_text(hjust = 0.5))
+  print(p)
+}
+```
+
+
+"ASV_16; Bacteroides"  
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+  plot_cor(x="Urinary_indole", xlab = "Urinary Indole [μM]", y="ASV_16; Bacteroides", cor.pos=30)
+ggsave("figures/ASV_16-Bacteroides-indole-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+  plot_cor(x="CD11cHighMHCIIpos.1", xlab = "CD11CHighMHCII+ [%]", y="ASV_16; Bacteroides", cor.pos = 5)
+ggsave("figures/ASV_16-Bacteroides-CD11chighMHCII+-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+  plot_cor(x="CD11cposMHCIIpos.FITC", xlab = "CD11c+MHCII+ [FITC]", y="ASV_16; Bacteroides", cor.pos=40000)
+ggsave("figures/ASV_16-Bacteroides-CD11cMHCII-fitc-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+
+
+"ASV_41; Bacteroides"
+
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+  plot_cor(x="Urinary_indole", xlab = "Urinary Indole [μM]", y="ASV_41; Bacteroides", cor.pos = 30)
+ggsave("figures/ASV_41-Bacteroides-indole-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+ plot_cor(x="CD11cHighMHCIIpos.1", xlab = "CD11CHighMHCII+ [%]", y="ASV_41; Bacteroides", cor.pos = 5)
+ggsave("figures/ASV_41-Bacteroides-CD11chighMHCII+-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+ plot_cor(x="CD11cposMHCIIpos.FITC", xlab = "CD11c+MHCII+ [FITC]", y="ASV_41; Bacteroides", cor.pos = 40000)
+ggsave("figures/ASV_41-Bacteroides-CD11cMHCII-fitc-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+
+"ASV_88; Bacteroides"
+
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+  plot_cor(x="Urinary_indole", xlab = "Urinary Indole [μM]", y="ASV_88; Bacteroides", cor.pos = 30)
+ggsave("figures/ASV_88-Bacteroides-indole-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+  plot_cor(x="CD11cHighMHCIIpos.1", xlab = "CD11CHighMHCII+ [%]", y="ASV_88; Bacteroides", cor.pos = 5)
+ggsave("figures/ASV_88-Bacteroides-CD11chighMHCII+-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+  plot_cor(x="CD11cposMHCIIpos.FITC", xlab = "CD11c+MHCII+ [FITC]", y="ASV_88; Bacteroides", cor.pos = 40000)
+ggsave("figures/ASV_88-Bacteroides-CD11cMHCII-fitc-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+
+"ASV_26; Phascolarctobacterium"
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+    plot_cor(x="Urinary_indole", xlab = "Urinary Indole [μM]", y="ASV_26; Phascolarctobacterium", cor.pos = 30)
+ggsave("figures/ASV_26-Phascolarctobacterium-indole-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+  plot_cor(x="CD11cHighMHCIIpos.1", xlab = "CD11CHighMHCII+ [%]", y="ASV_26; Phascolarctobacterium", cor.pos = 5)
+ggsave("figures/ASV_26-Phascolarctobacterium-CD11chighMHCII+-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+  plot_cor(x="CD11cposMHCIIpos.FITC", xlab = "CD11c+MHCII+ [FITC]", y="ASV_26; Phascolarctobacterium", cor.pos = 40000)
+ggsave("figures/ASV_26-Phascolarctobacterium-CD11cMHCII-fitc-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+
+"ASV_79; Lachnospiraceae UCG-001"
+
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+    plot_cor(x="Urinary_indole", xlab = "Urinary Indole [μM]", y="ASV_79; Lachnospiraceae UCG-001", cor.pos = 30)
+ggsave("figures/ASV_79-Lachnospiraceae-UCG-001-indole-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+  plot_cor(x="CD11cHighMHCIIpos.1", xlab = "CD11CHighMHCII+ [%]", y="ASV_79; Lachnospiraceae UCG-001", cor.pos = 5)
+ggsave("figures/ASV_79-Lachnospiraceae-UCG-001-CD11chighMHCII+-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+  plot_cor(x="CD11cposMHCIIpos.FITC", xlab = "CD11c+MHCII+ [FITC]", y="ASV_79; Lachnospiraceae UCG-001", cor.pos = 40000)
+ggsave("figures/ASV_79-Lachnospiraceae-UCG-001-CD11cMHCII-fitc-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+
+"ASV_15; Parabacteroides"
+
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+    plot_cor(x="Urinary_indole", xlab = "Urinary Indole [μM]", y="ASV_15; Parabacteroides", cor.pos = 30)
+ggsave("figures/ASV_15-Parabacteroides-indole-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+  plot_cor(x="CD11cHighMHCIIpos.1", xlab = "CD11CHighMHCII+ [%]", y="ASV_15; Parabacteroides", cor.pos = 5)
+ggsave("figures/ASV_15-Parabacteroides-CD11chighMHCII+-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+  plot_cor(x="CD11cposMHCIIpos.FITC", xlab = "CD11c+MHCII+ [FITC]", y="ASV_15; Parabacteroides", cor.pos = 40000)
+ggsave("figures/ASV_15-Parabacteroides-CD11cMHCII-fitc-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+
+"ASV_139; Roseburia" 
+
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+    plot_cor(x="Urinary_indole", xlab = "Urinary Indole [μM]", y="ASV_139; Roseburia", cor.pos = 30)
+ggsave("figures/ASV_139-Roseburia-indole-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+ plot_cor(x="CD11cHighMHCIIpos.1", xlab = "CD11CHighMHCII+ [%]", y="ASV_139; Roseburia", cor.pos = 5)
+ggsave("figures/ASV_139-Roseburia-CD11chighMHCII+-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+ plot_cor(x="CD11cposMHCIIpos.FITC", xlab = "CD11c+MHCII+ [FITC]", y="ASV_139; Roseburia", cor.pos = 40000)
+ggsave("figures/ASV_139-Roseburia-CD11cMHCII-fitc-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+
+#### Targeted correlations - Enterobacterales/acieae 
+
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+    filter(OTU == "ASV_6; unknown_Enterobacterales") %>%
+    ggscatter(
+      x = "Urinary_indole_ummol_ml",
+      y = "Abundance",
+      add = "reg.line",
+      conf.int = T,
+      size = 3,
+      title = "ASV_6; unknown_Enterobacterales",
+      color = "Donor",
+      xlab = "Urinary Indole [μmol/mL]",
+      ylab = "CLR-transformed abundance"
+    ) +
+    stat_cor(aes(color=Donor), label.x = 0.35) +
+    scale_color_manual(values = cols_hfmt) +
+    scale_fill_manual(values = cols_hfmt) +
+    theme_cowplot(font_size = 15) +
+    theme(plot.title = element_text(hjust = 0.5))
+ggsave("figures/ASV_6-Enterobacterales-indole-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+
+```{r}
+ps_mouse_clr %>% 
+  ps_melt() %>%
+    filter(OTU == "ASV_69; unknown_Enterobacteriaceae") %>%
+    ggscatter(
+      x = "Urinary_indole_ummol_ml",
+      y = "Abundance",
+      add = "reg.line",
+      conf.int = T,
+      size = 3,
+      title = "ASV_69; unknown_Enterobacteriaceae",
+      color = "Donor",
+      xlab = "Urinary Indole [μmol/mL]",
+      ylab = "CLR-transformed abundance"
+    ) +
+    stat_cor(aes(color=Donor), label.x = 0.35) +
+    scale_color_manual(values = cols_hfmt) +
+    scale_fill_manual(values = cols_hfmt) +
+    theme_cowplot(font_size = 15) +
+    theme(plot.title = element_text(hjust = 0.5))
+ggsave("figures/ASV_69-Enterobacteriaceae-indole-cor.pdf", device = "pdf", dpi=300, height = 3.75, width = 5.75)
+```
+
