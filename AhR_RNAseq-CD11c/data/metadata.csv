@@ -1,0 +1,9 @@
+SampleID,original_name,Treatment,RIN,Concentration
+ShamGut_01,3,Sham,3.2,9.61
+ShamGut_02,6,Sham,3.1,6.898
+ShamGut_03,9,Sham,3.3,2.839
+ShamGut_04,14,DMSO,5.4,2.124
+StrokeGut_01,2,Stroke,3.9,15.575
+StrokeGut_02,5,Stroke,3.6,10.6
+StrokeGut_03,8,Stroke,3.2,2.168
+StrokeGut_04,13,Stroke,3.6,1.131

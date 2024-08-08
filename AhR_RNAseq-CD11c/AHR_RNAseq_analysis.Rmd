@@ -1,0 +1,234 @@
+---
+title: "AHR_RNAseq_analysis"
+author: "Adam Sorbie"
+date: "6/7/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Analysis of RNAseq AHR Dendritic cell experiment
+
+Load libraries with PACMAN
+```{r}
+pacman::p_load("tximport", "tximportData", "DESeq2", "GenomicFeatures", 
+               "tximeta", "org.Mm.eg.db", "AnnotationDbi","tidyverse",
+               "clusterProfiler", "SOAR", "ComplexHeatmap", "apeglm",
+               "RMariaDB", "RColorBrewer", "EnhancedVolcano", "txdbmaker")
+source("scripts/RNAseq_functions.R")
+```
+
+### Start of analysis - load files and create db for annotation 
+
+Load metadata and get quant filepaths
+
+Note ShamGut04 is DMSO-treated and should be excluded 
+```{r}
+metadata <- read_csv("data/metadata.csv")
+# remove DMSO sample 
+metadata <- metadata %>% 
+  filter(SampleID != "ShamGut_04")
+# 
+quant_path <- "data/quants"
+files <- file.path(quant_path, paste0(metadata$SampleID, "_quant"), "quant.sf")
+names(files) <- paste0(metadata$SampleID, "_quant")
+
+#inspecting files
+files 
+# remove DMSO sample 
+files <- files[files != "data/quants/ShamGut_04_quant/quant.sf"]
+```
+
+Create transcript db for mapping and annotations
+```{r}
+#txdb <- txdbmaker::makeTxDbFromEnsembl(organism = "Mus musculus")
+#saveRDS(txdb, file= "txdb.rds")
+txdb <- readRDS("txdb.rds")
+
+#k <- keys(txdb, keytype = "TXNAME")
+#saveRDS(k, file = "k.rds")
+k <- readRDS("k.rds")
+
+#tx2gene <- AnnotationDbi::select(txdb, k, "GENEID", "TXNAME") #try ignore txversion 
+#saveRDS(tx2gene, file = "tx2gene.rds")
+tx2gene <- readRDS("tx2gene.rds")
+```
+
+Load Salmon files with tximport 
+```{r}
+#this function will output gene-level matrices. We can avoid gene-level summarization by setting txOut=TRUE
+#txi <- tximport(files, type = "salmon", tx2gene = tx2gene, ignoreTxVersion = T)
+#saveRDS(txi, file = "txi.rds")
+txi <- readRDS("txi.rds")
+```
+
+```{r}
+DT::datatable(metadata)
+```
+
+
+
+Create DEseq object 
+```{r}
+# create deseq object
+dds <- DESeqDataSetFromTximport(txi, colData = metadata, design = ~ Treatment)
+
+# filter to remove rows with very few reads - not strictly necessary, see here: https://bioconductor.org/packages/release/bioc/vignettes/DESeq2/inst/doc/DESeq2.html#pre-filtering
+#keep <- rowSums(counts(dds)) >= 10
+#dds <- dds[keep,]
+# check factor levels are in the correct order - actually not required since genotypes alphabetical but good to have for future use
+dds$Treatment
+dds$Treatment <- relevel(dds$Treatment, ref = "Sham")
+```
+
+## PCA QC - Where is variation coming from? 
+
+```{r}
+# PCA RIN value
+rld <- vst(dds, blind = T)
+rld_mat <- assay(rld)
+pca <- prcomp(t(rld_mat))
+
+RIN_col_scale <- brewer.pal(8, "BuGn")
+
+df <- cbind(metadata, pca$x)
+
+p_rin <- plotPCA(rld, intgroup="RIN") + 
+  scale_color_continuous(type = "viridis")
+p_rin
+p_rna_conc <- plotPCA(rld, intgroup="Concentration") + 
+  scale_color_continuous(type = "viridis")
+p_rna_conc
+p_treatment <- plotPCA(rld, intgroup="Treatment") + 
+  theme_bw()
+p_treatment
+```
+
+Seems like the outliers are due to low RNA concentration rather than quality. 
+
+## Differential expression - which genes differ between conditions? 
+
+
+
+```{r}
+dds_all <- DESeq(dds)
+res <- results(dds_all, contrast = c("Treatment", "Stroke", "Sham"), 
+               independentFiltering = F)
+
+res.annot <- annotate_degs(org.Mm.eg.db, res, keys = row.names(res), 
+                           keytype = "ENSEMBL", multivals = "first")
+res_df <- as.data.frame(res.annot)
+EnhancedVolcano(res_df, lab = res_df$gene_symbol, x = "log2FoldChange", y = "padj", pCutoff = 0.05,
+                FCcutoff = 0.58,  ylim=c(0, 12))
+ggsave("volcano_all.pdf", device = "pdf", dpi=300, height = 10, width = 8,)
+```
+
+### Nice volcano plot 
+
+```{r}
+prettyVolcano(
+  res_df,
+  lfc_thresh = 1,
+  pval_thresh = 0.1,
+  contrast = c("Sham", "Stroke"),
+  gene_names = "gene_symbol",
+  xlim = c(-25, 25),
+  ylim = c(0, 8),
+  downreg_col = "#6D6D6F",
+  upreg_col = "#FFA845",
+  pointSize = 3,
+  drawConnectors = T,
+  max.overlaps = 20
+)
+```
+
+
+# Heatmap of differentially expressed genes
+
+https://www.bioconductor.org/packages/release/bioc/vignettes/DESeq2/inst/doc/DESeq2.html#heatmap-of-the-count-matrix
+https://support.bioconductor.org/p/133313/#133315
+```{r}
+sig_oe <- res_df %>% 
+  filter(padj < 0.25) %>% 
+  rownames()
+# filter variance stabilised matrix
+rld_mat_filt <- rld_mat[sig_oe, ]
+rownames(rld_mat_filt) <- res_df %>% 
+  filter(padj < 0.25) %>% 
+  pull(gene_symbol)
+```
+
+```{r}
+# create annotation
+groups_hmap <- c(rep("Sham", 3), rep("Stroke", 4))
+groups_hmap <- factor(groups_hmap)
+hmap_annot <- HeatmapAnnotation(Treatment = groups_hmap,
+    col = list(Treatment = c("Sham" = "#6D6D6F", "Stroke" = "#FFA845")))
+```
+
+```{r}
+# scale matrix and plot
+rld_mat_z <- calc_z_score(rld_mat_filt)
+Heatmap(rld_mat_z, top_annotation = hmap_annot, column_split = groups_hmap, border = "black", 
+        cluster_column_slices = F)
+```
+
+# Heatmap of AhR target genes
+
+```{r}
+ahr_target_genes <-readxl::read_excel("data/mmc2 (4).xlsx")
+ahr_target_genes$Gene <- str_to_sentence(ahr_target_genes$Gene)
+```
+
+```{r}
+ahr_target_genes_ensembl <- res_df %>% 
+  filter(gene_symbol %in% ahr_target_genes$Gene) %>% 
+  rownames()
+rld_mat_ahr <- rld_mat[ahr_target_genes_ensembl, ]
+rownames(rld_mat_ahr) <- res_df %>% 
+  filter(gene_symbol %in% ahr_target_genes$Gene) %>% 
+  pull(gene_symbol)
+```
+
+```{r}
+# scale matrix and plot
+rld_mat_ahr_z <- calc_z_score(rld_mat_ahr)
+# some have zero-variance so replace with 0 (need to check why this is)
+rld_mat_ahr_z[is.na(rld_mat_ahr_z)] <- 0
+Heatmap(rld_mat_ahr_z, top_annotation = hmap_annot, column_split = groups_hmap, border = "black", 
+        cluster_column_slices = F)
+```
+
+# Gene Ontology - clusterProfiler 
+
+```{r}
+res_annot_noNA <-  res.annot %>% 
+  as.data.frame() %>% 
+  drop_na(padj)
+## Create background dataset for hypergeometric testing using all tested genes for significance in the results                 
+allOE_genes <- as.character(res_annot_noNA$gene_symbol)
+```
+
+```{r}
+sigOE_genes <- res_annot_noNA %>% 
+  filter(padj < 0.25) %>% 
+  pull(gene_symbol)
+```
+
+```{r}
+ego <- enrichGO(gene = sigOE_genes, 
+                universe = allOE_genes,
+                keyType = "SYMBOL",
+                OrgDb = org.Mm.eg.db, 
+                ont = "CC", 
+                pAdjustMethod = "BH", 
+                qvalueCutoff = 0.25, 
+                readable = TRUE)
+```
+
+```{r}
+clusterProfiler::dotplot(ego)
+```
+

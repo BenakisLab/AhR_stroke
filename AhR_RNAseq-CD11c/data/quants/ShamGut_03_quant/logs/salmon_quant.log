@@ -1,0 +1,52 @@
+[2021-07-06 11:02:17.001] [jointLog] [info] setting maxHashResizeThreads to 16
+[2021-07-06 11:02:17.001] [jointLog] [info] Fragment incompatibility prior below threshold.  Incompatible fragments will be ignored.
+[2021-07-06 11:02:17.001] [jointLog] [info] Usage of --validateMappings implies use of minScoreFraction. Since not explicitly specified, it is being set to 0.65
+[2021-07-06 11:02:17.001] [jointLog] [info] Setting consensusSlack to selective-alignment default of 0.35.
+[2021-07-06 11:02:17.001] [jointLog] [info] parsing read library format
+[2021-07-06 11:02:17.001] [jointLog] [info] There is 1 library.
+[2021-07-06 11:02:17.053] [jointLog] [info] Loading pufferfish index
+[2021-07-06 11:02:17.053] [jointLog] [info] Loading dense pufferfish index.
+[2021-07-06 11:02:18.649] [jointLog] [info] done
+[2021-07-06 11:02:18.649] [jointLog] [info] Index contained 137,562 targets
+[2021-07-06 11:02:18.695] [jointLog] [info] Number of decoys : 0
+[2021-07-06 11:02:19.434] [jointLog] [info] Automatically detected most likely library type as IU
+
+[2021-07-06 11:08:59.611] [jointLog] [info] Computed 285,162 rich equivalence classes for further processing
+[2021-07-06 11:08:59.611] [jointLog] [info] Counted 65,243,024 total reads in the equivalence classes 
+[2021-07-06 11:08:59.625] [jointLog] [info] Number of mappings discarded because of alignment score : 59,256,460
+[2021-07-06 11:08:59.625] [jointLog] [info] Number of fragments entirely discarded because of alignment score : 16,792,811
+[2021-07-06 11:08:59.625] [jointLog] [info] Number of fragments discarded because they are best-mapped to decoys : 0
+[2021-07-06 11:08:59.625] [jointLog] [info] Number of fragments discarded because they have only dovetail (discordant) mappings to valid targets : 6,222,688
+[2021-07-06 11:08:59.625] [jointLog] [info] Mapping rate = 67.9614%
+
+[2021-07-06 11:08:59.625] [jointLog] [info] finished quantifyLibrary()
+[2021-07-06 11:08:59.627] [jointLog] [info] Starting optimizer
+[2021-07-06 11:08:59.745] [jointLog] [info] Marked 0 weighted equivalence classes as degenerate
+[2021-07-06 11:08:59.761] [jointLog] [info] iteration = 0 | max rel diff. = 225.108
+[2021-07-06 11:08:59.612] [fileLog] [info] 
+At end of round 0
+==================
+Observed 96000143 total fragments (96000143 in most recent round)
+
+[2021-07-06 11:09:01.281] [jointLog] [info] iteration = 100 | max rel diff. = 4.89492
+[2021-07-06 11:09:02.819] [jointLog] [info] iteration = 200 | max rel diff. = 13.9195
+[2021-07-06 11:09:04.312] [jointLog] [info] iteration = 300 | max rel diff. = 14.6834
+[2021-07-06 11:09:05.805] [jointLog] [info] iteration = 400 | max rel diff. = 20.244
+[2021-07-06 11:09:07.290] [jointLog] [info] iteration = 500 | max rel diff. = 0.436778
+[2021-07-06 11:09:08.780] [jointLog] [info] iteration = 600 | max rel diff. = 1.09103
+[2021-07-06 11:09:10.252] [jointLog] [info] iteration = 700 | max rel diff. = 0.177373
+[2021-07-06 11:09:11.739] [jointLog] [info] iteration = 800 | max rel diff. = 0.0878462
+[2021-07-06 11:09:13.227] [jointLog] [info] iteration = 900 | max rel diff. = 0.0309772
+[2021-07-06 11:09:14.716] [jointLog] [info] iteration = 1,000 | max rel diff. = 0.100786
+[2021-07-06 11:09:16.198] [jointLog] [info] iteration = 1,100 | max rel diff. = 0.032319
+[2021-07-06 11:09:17.681] [jointLog] [info] iteration = 1,200 | max rel diff. = 0.0825117
+[2021-07-06 11:09:19.167] [jointLog] [info] iteration = 1,300 | max rel diff. = 0.033426
+[2021-07-06 11:09:20.656] [jointLog] [info] iteration = 1,400 | max rel diff. = 0.0308459
+[2021-07-06 11:09:21.140] [jointLog] [info] iteration = 1,434 | max rel diff. = 0.0087666
+[2021-07-06 11:09:21.170] [jointLog] [info] Finished optimizer
+[2021-07-06 11:09:21.170] [jointLog] [info] writing output 
+
+[2021-07-06 11:09:21.407] [jointLog] [warning] NOTE: Read Lib [[ /dss/dssfs02/lwp-dss-0001/pr63la/pr63la-dss-0000/ra52noz2/rawdata/ShamGut_03_S1_L001_R1_001.fq.gz, /dss/dssfs02/lwp-dss-0001/pr63la/pr63la-dss-0000/ra52noz2/rawdata/ShamGut_03_S1_L001_R2_001.fq.gz]] :
+
+Detected a *potential* strand bias > 1% in an unstranded protocol check the file: quants/ShamGut_03_quant/lib_format_counts.json for details
+

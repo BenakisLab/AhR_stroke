@@ -1,0 +1,51 @@
+[2021-07-06 10:54:47.644] [jointLog] [info] setting maxHashResizeThreads to 16
+[2021-07-06 10:54:47.644] [jointLog] [info] Fragment incompatibility prior below threshold.  Incompatible fragments will be ignored.
+[2021-07-06 10:54:47.644] [jointLog] [info] Usage of --validateMappings implies use of minScoreFraction. Since not explicitly specified, it is being set to 0.65
+[2021-07-06 10:54:47.644] [jointLog] [info] Setting consensusSlack to selective-alignment default of 0.35.
+[2021-07-06 10:54:47.644] [jointLog] [info] parsing read library format
+[2021-07-06 10:54:47.644] [jointLog] [info] There is 1 library.
+[2021-07-06 10:54:47.699] [jointLog] [info] Loading pufferfish index
+[2021-07-06 10:54:47.700] [jointLog] [info] Loading dense pufferfish index.
+[2021-07-06 10:54:49.257] [jointLog] [info] done
+[2021-07-06 10:54:49.257] [jointLog] [info] Index contained 137,562 targets
+[2021-07-06 10:54:49.305] [jointLog] [info] Number of decoys : 0
+[2021-07-06 10:54:50.077] [jointLog] [info] Automatically detected most likely library type as IU
+
+[2021-07-06 11:01:51.479] [jointLog] [info] Computed 351,039 rich equivalence classes for further processing
+[2021-07-06 11:01:51.479] [jointLog] [info] Counted 68,843,462 total reads in the equivalence classes 
+[2021-07-06 11:01:51.502] [jointLog] [info] Number of mappings discarded because of alignment score : 65,188,517
+[2021-07-06 11:01:51.502] [jointLog] [info] Number of fragments entirely discarded because of alignment score : 17,158,073
+[2021-07-06 11:01:51.502] [jointLog] [info] Number of fragments discarded because they are best-mapped to decoys : 0
+[2021-07-06 11:01:51.502] [jointLog] [info] Number of fragments discarded because they have only dovetail (discordant) mappings to valid targets : 8,027,559
+[2021-07-06 11:01:51.502] [jointLog] [info] Mapping rate = 68.028%
+
+[2021-07-06 11:01:51.502] [jointLog] [info] finished quantifyLibrary()
+[2021-07-06 11:01:51.504] [jointLog] [info] Starting optimizer
+[2021-07-06 11:01:51.631] [jointLog] [info] Marked 0 weighted equivalence classes as degenerate
+[2021-07-06 11:01:51.648] [jointLog] [info] iteration = 0 | max rel diff. = 115.936
+[2021-07-06 11:01:51.480] [fileLog] [info] 
+At end of round 0
+==================
+Observed 101198727 total fragments (101198727 in most recent round)
+
+[2021-07-06 11:01:53.424] [jointLog] [info] iteration = 100 | max rel diff. = 17.0045
+[2021-07-06 11:01:55.182] [jointLog] [info] iteration = 200 | max rel diff. = 3.46381
+[2021-07-06 11:01:56.951] [jointLog] [info] iteration = 300 | max rel diff. = 1.00795
+[2021-07-06 11:01:58.677] [jointLog] [info] iteration = 400 | max rel diff. = 1.06848
+[2021-07-06 11:02:00.414] [jointLog] [info] iteration = 500 | max rel diff. = 0.141427
+[2021-07-06 11:02:02.161] [jointLog] [info] iteration = 600 | max rel diff. = 0.239179
+[2021-07-06 11:02:03.903] [jointLog] [info] iteration = 700 | max rel diff. = 1.9893
+[2021-07-06 11:02:05.610] [jointLog] [info] iteration = 800 | max rel diff. = 3.09594
+[2021-07-06 11:02:07.325] [jointLog] [info] iteration = 900 | max rel diff. = 0.0687081
+[2021-07-06 11:02:09.034] [jointLog] [info] iteration = 1,000 | max rel diff. = 0.0409949
+[2021-07-06 11:02:10.739] [jointLog] [info] iteration = 1,100 | max rel diff. = 0.329493
+[2021-07-06 11:02:12.439] [jointLog] [info] iteration = 1,200 | max rel diff. = 0.0928065
+[2021-07-06 11:02:14.131] [jointLog] [info] iteration = 1,300 | max rel diff. = 0.0724522
+[2021-07-06 11:02:14.385] [jointLog] [info] iteration = 1,316 | max rel diff. = 0.00766343
+[2021-07-06 11:02:14.412] [jointLog] [info] Finished optimizer
+[2021-07-06 11:02:14.412] [jointLog] [info] writing output 
+
+[2021-07-06 11:02:14.670] [jointLog] [warning] NOTE: Read Lib [[ /dss/dssfs02/lwp-dss-0001/pr63la/pr63la-dss-0000/ra52noz2/rawdata/ShamGut_02_S1_L001_R1_001.fq.gz, /dss/dssfs02/lwp-dss-0001/pr63la/pr63la-dss-0000/ra52noz2/rawdata/ShamGut_02_S1_L001_R2_001.fq.gz]] :
+
+Detected a *potential* strand bias > 1% in an unstranded protocol check the file: quants/ShamGut_02_quant/lib_format_counts.json for details
+

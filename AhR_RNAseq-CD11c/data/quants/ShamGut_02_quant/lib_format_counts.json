@@ -1,0 +1,22 @@
+{
+    "read_files": "[ /dss/dssfs02/lwp-dss-0001/pr63la/pr63la-dss-0000/ra52noz2/rawdata/ShamGut_02_S1_L001_R1_001.fq.gz, /dss/dssfs02/lwp-dss-0001/pr63la/pr63la-dss-0000/ra52noz2/rawdata/ShamGut_02_S1_L001_R2_001.fq.gz]",
+    "expected_format": "IU",
+    "compatible_fragment_ratio": 1.0,
+    "num_compatible_fragments": 68843462,
+    "num_assigned_fragments": 68843462,
+    "num_frags_with_concordant_consistent_mappings": 57520958,
+    "num_frags_with_inconsistent_or_orphan_mappings": 11671898,
+    "strand_mapping_bias": 0.5494656747545825,
+    "MSF": 0,
+    "OSF": 0,
+    "ISF": 31605792,
+    "MSR": 0,
+    "OSR": 0,
+    "ISR": 25915166,
+    "SF": 3464735,
+    "SR": 8207163,
+    "MU": 0,
+    "OU": 0,
+    "IU": 0,
+    "U": 0
+}

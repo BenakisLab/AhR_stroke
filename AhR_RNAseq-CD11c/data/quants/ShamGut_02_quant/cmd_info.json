@@ -1,0 +1,10 @@
+{
+    "salmon_version": "1.5.1",
+    "index": "transcriptome/mouse_index.idx",
+    "libType": "A",
+    "mates1": "/dss/dssfs02/lwp-dss-0001/pr63la/pr63la-dss-0000/ra52noz2/rawdata/ShamGut_02_S1_L001_R1_001.fq.gz",
+    "mates2": "/dss/dssfs02/lwp-dss-0001/pr63la/pr63la-dss-0000/ra52noz2/rawdata/ShamGut_02_S1_L001_R2_001.fq.gz",
+    "threads": "16",
+    "output": "quants/ShamGut_02_quant",
+    "auxDir": "aux_info"
+}

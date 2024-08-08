@@ -1,0 +1,54 @@
+[2021-07-06 11:09:22.612] [jointLog] [info] setting maxHashResizeThreads to 16
+[2021-07-06 11:09:22.612] [jointLog] [info] Fragment incompatibility prior below threshold.  Incompatible fragments will be ignored.
+[2021-07-06 11:09:22.612] [jointLog] [info] Usage of --validateMappings implies use of minScoreFraction. Since not explicitly specified, it is being set to 0.65
+[2021-07-06 11:09:22.612] [jointLog] [info] Setting consensusSlack to selective-alignment default of 0.35.
+[2021-07-06 11:09:22.612] [jointLog] [info] parsing read library format
+[2021-07-06 11:09:22.612] [jointLog] [info] There is 1 library.
+[2021-07-06 11:09:22.663] [jointLog] [info] Loading pufferfish index
+[2021-07-06 11:09:22.664] [jointLog] [info] Loading dense pufferfish index.
+[2021-07-06 11:09:24.146] [jointLog] [info] done
+[2021-07-06 11:09:24.146] [jointLog] [info] Index contained 137,562 targets
+[2021-07-06 11:09:24.194] [jointLog] [info] Number of decoys : 0
+[2021-07-06 11:09:25.024] [jointLog] [info] Automatically detected most likely library type as IU
+
+[2021-07-06 11:15:45.835] [jointLog] [info] Computed 297,570 rich equivalence classes for further processing
+[2021-07-06 11:15:45.835] [jointLog] [info] Counted 55,766,575 total reads in the equivalence classes 
+[2021-07-06 11:15:45.848] [jointLog] [info] Number of mappings discarded because of alignment score : 63,611,110
+[2021-07-06 11:15:45.848] [jointLog] [info] Number of fragments entirely discarded because of alignment score : 14,381,764
+[2021-07-06 11:15:45.848] [jointLog] [info] Number of fragments discarded because they are best-mapped to decoys : 0
+[2021-07-06 11:15:45.848] [jointLog] [info] Number of fragments discarded because they have only dovetail (discordant) mappings to valid targets : 4,656,822
+[2021-07-06 11:15:45.848] [jointLog] [info] Mapping rate = 64.5649%
+
+[2021-07-06 11:15:45.848] [jointLog] [info] finished quantifyLibrary()
+[2021-07-06 11:15:45.850] [jointLog] [info] Starting optimizer
+[2021-07-06 11:15:45.836] [fileLog] [info] 
+At end of round 0
+==================
+Observed 86372935 total fragments (86372935 in most recent round)
+
+[2021-07-06 11:15:45.960] [jointLog] [info] Marked 0 weighted equivalence classes as degenerate
+[2021-07-06 11:15:45.976] [jointLog] [info] iteration = 0 | max rel diff. = 117.848
+[2021-07-06 11:15:47.582] [jointLog] [info] iteration = 100 | max rel diff. = 6.4701
+[2021-07-06 11:15:49.179] [jointLog] [info] iteration = 200 | max rel diff. = 1.78003
+[2021-07-06 11:15:50.782] [jointLog] [info] iteration = 300 | max rel diff. = 0.345351
+[2021-07-06 11:15:52.377] [jointLog] [info] iteration = 400 | max rel diff. = 0.158403
+[2021-07-06 11:15:53.969] [jointLog] [info] iteration = 500 | max rel diff. = 1.72922
+[2021-07-06 11:15:55.593] [jointLog] [info] iteration = 600 | max rel diff. = 0.0780368
+[2021-07-06 11:15:57.184] [jointLog] [info] iteration = 700 | max rel diff. = 0.407254
+[2021-07-06 11:15:58.759] [jointLog] [info] iteration = 800 | max rel diff. = 0.151932
+[2021-07-06 11:16:00.308] [jointLog] [info] iteration = 900 | max rel diff. = 0.397323
+[2021-07-06 11:16:01.861] [jointLog] [info] iteration = 1,000 | max rel diff. = 0.332567
+[2021-07-06 11:16:03.430] [jointLog] [info] iteration = 1,100 | max rel diff. = 0.285953
+[2021-07-06 11:16:04.989] [jointLog] [info] iteration = 1,200 | max rel diff. = 0.0476187
+[2021-07-06 11:16:06.554] [jointLog] [info] iteration = 1,300 | max rel diff. = 0.0253822
+[2021-07-06 11:16:08.113] [jointLog] [info] iteration = 1,400 | max rel diff. = 0.0894654
+[2021-07-06 11:16:09.672] [jointLog] [info] iteration = 1,500 | max rel diff. = 0.0330171
+[2021-07-06 11:16:11.229] [jointLog] [info] iteration = 1,600 | max rel diff. = 0.029342
+[2021-07-06 11:16:12.199] [jointLog] [info] iteration = 1,662 | max rel diff. = 0.00331916
+[2021-07-06 11:16:12.221] [jointLog] [info] Finished optimizer
+[2021-07-06 11:16:12.221] [jointLog] [info] writing output 
+
+[2021-07-06 11:16:12.447] [jointLog] [warning] NOTE: Read Lib [[ /dss/dssfs02/lwp-dss-0001/pr63la/pr63la-dss-0000/ra52noz2/rawdata/ShamGut_04_S1_L001_R1_001.fq.gz, /dss/dssfs02/lwp-dss-0001/pr63la/pr63la-dss-0000/ra52noz2/rawdata/ShamGut_04_S1_L001_R2_001.fq.gz]] :
+
+Detected a *potential* strand bias > 1% in an unstranded protocol check the file: quants/ShamGut_04_quant/lib_format_counts.json for details
+
