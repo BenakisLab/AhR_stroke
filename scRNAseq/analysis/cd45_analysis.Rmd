@@ -1,0 +1,556 @@
+---
+title: "Manuscript Figures"
+author: "Kartikeya Singh"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+suppressPackageStartupMessages({
+  require(Seurat)
+  require(scCustomize)
+  require(ggplot2)
+  require(readxl)
+  require(pheatmap)
+  require(dplyr)
+  require(rlist)
+  require(scRepertoire)
+  require(ggalluvial)
+  require(ggrepel)
+  require(forcats)
+  require(rlist)
+  require(patchwork)
+  require(ggvenn)
+  require(reshape)
+  require(writexl)
+  require(scDblFinder)
+  require(viridis)
+  require(EnhancedVolcano)
+  require(org.Mm.eg.db)
+  require(clusterProfiler)
+  require(igraph)
+  require(ggraph)
+  require(pheatmap)
+  require(rlist)
+  require(ggpubr)
+  require(ggvenn)
+  require(tibble)
+  require(tidyr)
+  require(Hmisc)
+  require(DESeq2)
+  require(glmGamPoi)
+})
+
+col <- c("#FA979B", "#A7EBF6", "#AEEC5D","#F4000D", "#16FE00", "#16CEFF",
+         "#FDE400", "#FE9116", "#1CFDE3", "#FC87D0", "#C84BFD", "#FE0D9F",
+         "#839AFF", "#DEAA65", "#D1C9FF", "#22FC9C", "#C4ECC2", "#FA5F5C",
+         "#E795FE", "#B40DA3", "#0DAA0D")
+
+tbl.to.pie <- function(tbl,col.nm = "celltype"){
+  
+  colnames(tbl) <- c("cell.type","Freq")
+  tbl$prop <- round((tbl$Freq/sum(tbl$Freq))*100,2)
+  # tbl <- tbl[,c(1,3)]
+  
+  position <- tbl %>% mutate(csum = rev(cumsum(rev(prop))),
+                             pos = prop/2 + lead(csum, 1),
+                             pos = if_else(is.na(pos), prop/2, pos))
+  
+  pie <- ggplot(tbl, aes(x = "" , y = prop, fill = fct_inorder(cell.type))) +
+    geom_col(width = 1, color = 1) +
+    coord_polar(theta = "y") +
+    scale_fill_manual(values = as.character(col[1:nrow(tbl)])) +
+    geom_label_repel(data = position,
+                     aes(y = pos,
+                         label = paste0(cell.type,"\n","n=",Freq," ; ",prop, "%")),size = 4.5, nudge_x = 1, show.legend = FALSE) + theme_void() + theme(legend.position = "none")
+  
+  return(pie)
+}
+
+
+top.markers <- function(df,FC.cutoff = 1){
+  
+  df$diff <- df$pct.1-df$pct.2
+  df <- df[which(df$p_val_adj < 0.05 & df$avg_log2FC > FC.cutoff),]
+  return(df)
+}
+
+'%!in%' <- function(x,y)!('%in%'(x,y))
+
+tryNULL <- function (expr, default = NULL, quiet = TRUE) {
+  result <- default
+  if ( quiet ) {
+    tryCatch(result <- expr, error = function(e) e)
+  } else {
+    try(result <- expr)
+  }
+  result
+}
+
+range01 <- function(x){(x-min(x))/(max(x)-min(x))}
+
+data.in.dir <- ""
+plots.out.dir <- ""
+```
+
+## Reading annotated data
+
+```{r}
+data <- readRDS(file = paste0(data.in.dir,"integrated_annotated.rds"))
+data <- subset(x = data,idents = c("NA","possible doublet",
+                                   "T-Mye doublet"),invert = T)
+
+Idents(data) <- data@meta.data$tissue
+data <- subset(x = data,idents = "LP_col",invert = T)
+Idents(data) <- data@meta.data$new.anno
+
+data@meta.data <- data@meta.data[,c(1:11,22)]
+saveRDS(object = data,file = "D:/WORK/Projects/B04/Data/processed.rds")
+
+```
+
+## UMAP
+
+```{r}
+
+umap <- DimPlot(object = data,repel = T,label = T,pt.size = 1) +
+  NoLegend()
+
+ggsave(plot = umap,
+       filename = paste0(plots.out.dir,"umap.pdf"),
+       device = "pdf",
+       dpi = 100,
+       width = 12,
+       height = 10,
+       limitsize = F)
+
+umap.cond <- DimPlot(object = data,split.by = "condition")
+ggsave(plot = umap.cond,
+       filename = paste0(plots.out.dir,"umap_condition.pdf"),
+       device = "pdf",
+       dpi = 100,
+       width = 16,
+       height = 6,
+       limitsize = F)
+
+umap.tissue <- DimPlot(object = data,split.by = "tissue")
+ggsave(plot = umap.tissue,
+       filename = paste0(plots.out.dir,"umap_tissue.pdf"),
+       device = "pdf",
+       dpi = 100,
+       width = 20,
+       height = 6,
+       limitsize = F)
+```
+
+### Celltype distribution
+
+```{r}
+meta <- data@meta.data
+
+alluv.lst <- lapply(X = unique(meta$tissue),FUN = function(t){
+  
+  t.meta <- meta[which(meta$tissue == t),]
+  
+  cond.ct.tbl <- as.data.frame(table(t.meta[,c("new.anno","condition")]))
+  colnames(cond.ct.tbl)[1] <- "cell.type"
+  
+  cond.ct.tbl <- cond.ct.tbl %>%
+  group_by(condition) %>%
+  mutate(Perc = Freq / sum(Freq) * 100)
+  
+  alluv.p <- ggplot(cond.ct.tbl,
+                  aes(x = condition, stratum = cell.type,
+                      alluvium = cell.type, y = Perc, fill = cell.type)) +
+  geom_flow(stat = "alluvium", aes(fill = cell.type)) +
+  geom_stratum() + NoLegend() +
+  geom_text(stat = "stratum", aes(label = after_stat(stratum))) +
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16)) +
+  labs(title = paste0("Tissue : ",t),
+       x = "Condition", y = "Percent")
+  
+  return(alluv.p)
+  
+})
+alluv.wrap <- wrap_plots(alluv.lst,ncol = 3)
+
+ggsave(plot = alluv.wrap,
+       filename = paste0(plots.out.dir,"Alluv_distribution_wrap.pdf"),
+       device = "pdf",
+       dpi = 100,
+       width = 18,
+       height = 12,
+       limitsize = F)
+```
+
+### Ahr expression
+
+#### Tissue-condition
+
+```{r}
+data@meta.data$tissue_cond <- paste0(data@meta.data$tissue,
+                                     "_",data@meta.data$condition)
+
+Idents(data) <- data@meta.data$tissue_cond
+
+avg.ahr <- AverageExpression(object = data,features = "Ahr")
+avg.ahr <- as.data.frame(t(avg.ahr$SCT))
+avg.ahr$scaled <- avg.ahr$V1/max(avg.ahr$V1)
+# avg.ahr$tissue_cond <- row.names(avg.ahr)
+
+df <- do.call("rbind",lapply(X = row.names(avg.ahr),
+                                   FUN = function(x){
+        x.sp <- unlist(strsplit(x = x,split = "-"))
+        return(data.frame("tissue" = paste0(x.sp[-length(x.sp)],
+                                            collapse = "_"),
+                          "condition" = x.sp[length(x.sp)]))
+                                   }))
+
+avg.ahr <- cbind.data.frame(avg.ahr,df,stringsAsFactors = F)
+
+avg.ahr$tissue <- factor(avg.ahr$tissue,levels = c("Liver","mLN","LP_SI"))
+
+avg.ahr.bar <- ggplot(data = avg.ahr,aes(x = tissue,
+                                         y = scaled,
+                                         fill = condition)) +
+  geom_bar(stat="identity", color="black", position=position_dodge()) +
+  xlab("Tissue") +
+  ylab("Average expression")
+
+ggsave(plot = avg.ahr.bar,
+       filename = paste0(plots.out.dir,"Ahr_tissue_bar.pdf"),
+       device = "pdf",
+       dpi = 300,
+       width = 6,
+       height = 5,
+       limitsize = F)
+```
+
+#### Tissue-celltype
+
+```{r}
+data@meta.data$tissue_ct <- paste0(data@meta.data$tissue,
+                                        "_",data@meta.data$new.anno)
+
+Idents(data) <- data@meta.data$tissue_ct
+
+ct.avg.ahr <- AverageExpression(object = data,features = "Ahr")
+ct.avg.ahr <- as.data.frame(t(ct.avg.ahr$SCT))
+ct.avg.ahr$scaled <- ct.avg.ahr$V1/max(ct.avg.ahr$V1)
+ct.avg.ahr$tissue_ct <- row.names(ct.avg.ahr)
+ct.avg.ahr <- ct.avg.ahr[order(ct.avg.ahr$scaled,
+                                         decreasing = T),]
+
+ct.avg.ahr$tissue_ct <- factor(ct.avg.ahr$tissue_ct,
+                               levels = rev(unique(ct.avg.ahr$tissue_ct)))
+
+ct.avg.ahr.bar <- ggplot(data = ct.avg.ahr,
+                         aes(x = tissue_ct,
+                             y = scaled)) +
+  geom_bar(stat="identity",
+           color="black",
+           position=position_dodge(),
+           width=0.6) + 
+  xlab("Tissue_celltype") +
+  ylab("Average expression") + 
+  coord_flip() + 
+  theme(axis.text.x = element_text(size = 20),
+        axis.text.y = element_text(size = 18),
+        legend.text = element_text(size=40),
+        legend.title = element_text(size=50))
+
+
+ggsave(plot = ct.avg.ahr.bar,
+       filename = paste0(plots.out.dir,"Ahr_tissue_ct_bar.pdf"),
+       device = "pdf",
+       dpi = 100,
+       width = 20,
+       height = 30,
+       limitsize = F)
+```
+
+#### Tissue-celltype-condition
+
+```{r}
+data@meta.data$tissue_ct_cond <- paste0(data@meta.data$tissue,
+                                        "_",data@meta.data$new.anno,
+                                        "_",data@meta.data$condition)
+
+Idents(data) <- data@meta.data$tissue_ct_cond
+
+cond.ct.avg.ahr <- AverageExpression(object = data,features = "Ahr")
+cond.ct.avg.ahr <- as.data.frame(t(cond.ct.avg.ahr$SCT))
+cond.ct.avg.ahr$scaled <- cond.ct.avg.ahr$V1/max(cond.ct.avg.ahr$V1)
+cond.ct.avg.ahr <- cond.ct.avg.ahr[order(cond.ct.avg.ahr$scaled,
+                                         decreasing = T),]
+
+df <- do.call("rbind",lapply(X = row.names(cond.ct.avg.ahr),
+                                   FUN = function(x){
+        x.sp <- unlist(strsplit(x = x,split = "-"))
+        return(data.frame("tissue_ct" = paste0(x.sp[-length(x.sp)],
+                                            collapse = "_"),
+                          "condition" = x.sp[length(x.sp)]))
+                                   }))
+
+cond.ct.avg.ahr <- cbind.data.frame(cond.ct.avg.ahr,df,stringsAsFactors = F)
+
+cond.ct.avg.ahr$tissue_ct <- factor(cond.ct.avg.ahr$tissue_ct,
+                               levels = rev(unique(cond.ct.avg.ahr$tissue_ct)))
+
+cond.ct.avg.ahr.bar <- ggplot(data = cond.ct.avg.ahr,
+                         aes(x = tissue_ct,
+                             y = scaled,
+                             fill = condition)) +
+  geom_bar(stat="identity",
+           color="black",
+           position=position_dodge(),
+           width=0.6) + 
+  xlab("Tissue_celltype") +
+  ylab("Average expression") + 
+  coord_flip() + 
+  theme(axis.text.x = element_text(size = 20),
+        axis.text.y = element_text(size = 18),
+        legend.text = element_text(size=40),
+        legend.title = element_text(size=50))
+
+
+ggsave(plot = cond.ct.avg.ahr.bar,
+       filename = paste0(plots.out.dir,"Ahr_tissue_ct_cond_bar.pdf"),
+       device = "pdf",
+       dpi = 100,
+       width = 20,
+       height = 30,
+       limitsize = F)
+
+
+```
+
+```{r}
+data@meta.data$tissue_ct_cond <- paste0(data@meta.data$tissue,
+                                        "_._",data@meta.data$new.anno,
+                                        "_._",data@meta.data$condition)
+
+Idents(data) <- data@meta.data$tissue_ct_cond
+
+ct.groups <- read_xlsx(path = "D:/WORK/Projects/B04/Cell_groups.xlsx")
+# ct.groups$Celltype <- factor(x = ct.groups$Celltype)
+# ct.groups$Cell.group <- factor(x = ct.groups$Cell.group)
+
+tissue.ct.cond.dot <- DotPlot(object = data,features = "Ahr")
+tissue.ct.cond.dot.df <- tissue.ct.cond.dot$data
+tissue.ct.cond <- do.call("rbind",lapply(X = tissue.ct.cond.dot.df$id,FUN = function(x){
+  x.sp <- unlist(strsplit(x = as.character(x),split = "_._"))
+  return(data.frame("Tissue"=x.sp[1],"Celltype"=x.sp[2],
+                    "Condition"=x.sp[3]))
+}))
+
+tissue.ct.cond <- left_join(x = tissue.ct.cond,y = ct.groups,
+                            by = c("Celltype"))
+tissue.ct.cond.dot.df <- cbind.data.frame(tissue.ct.cond.dot.df,
+                                          tissue.ct.cond,
+                                          stringsAsFactors = F)
+
+# tissue.ct.cond.dot.df$Celltype <- factor(x = tissue.ct.cond.dot.df$Celltype,levels = c("Inflammatory monocyte","C1qc+ macrophage","Monocyte derived macrophages","moDC","cDC1","cDC2","pDC","NK cell","Plasma cell","GC B cell","Naive B cell","Activated B cell","pre ILC","ILC1","ILC2","γδ T cell","Th17 cell","Naive Treg","Naive Cd8 T cell","Naive Cd4 T cell","Cytotoxic effector Cd8 T cell ","Activated Cd8 T cell","Activated Cd4 T cell","Cytotoxic Cd4 T cell"))
+
+lapply(X = unique(tissue.ct.cond.dot.df$Tissue),FUN = function(tissue){
+  
+  tissue.df <- tissue.ct.cond.dot.df[which(tissue.ct.cond.dot.df$Tissue == tissue),]
+  
+  tissue.df <- tissue.df[order(tissue.df$Cell.group),]
+  tissue.df$Celltype <- factor(tissue.df$Celltype,
+                               levels = unique(tissue.df$Celltype))
+  tissue.df$Cell.group <- factor(tissue.df$Cell.group,
+                                 levels = unique(tissue.df$Cell.group))
+  tissue.df$Color.group <- factor(tissue.df$Color.group)
+  tissue.df$Color.sub.group <- factor(tissue.df$Color.sub.group)
+  
+  group.colors <- unique(tissue.df$Color.group)
+  names(group.colors) <- unique(tissue.df$Cell.group)
+  
+  subgroup.colors <- unique(tissue.df$Color.sub.group)
+  names(subgroup.colors) <- unique(tissue.df$Cell.sub.group)
+  
+  tissue.df$Celltype <- factor(x = tissue.df$Celltype,
+                               levels = c("Inflammatory monocyte","C1qc+ macrophage","Monocyte derived macrophages","moDC","cDC1","cDC2","pDC","NK cell","Plasma cell","GC B cell","Naive B cell","Activated B cell","pre ILC","ILC1","ILC2","γδ T cell","Th17 cell","Naive Treg","Naive Cd8 T cell","Naive Cd4 T cell","Cytotoxic effector Cd8 T cell","Activated Cd8 T cell","Activated Cd4 T cell","Cytotoxic Cd4 T cell"))
+  
+  tissue.dot <- ggplot(data = tissue.df,
+                            mapping = aes(x = Celltype,y = avg.exp)) +
+    geom_point(data = tissue.df,mapping = aes(size = pct.exp,
+                                                   colour = Celltype)) +
+    facet_wrap(~Condition,ncol = 1,switch = "y",strip.position = "right") +
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 90,size = 14,face = "bold",
+                                     hjust = 1,vjust = 0.5,color = c(rep("royalblue",6),"gold3",rep("forestgreen",4),rep("purple2",3),rep("red2",9)))) + ggtitle(paste0("Tissue:",tissue))
+
+ggsave(plot = tissue.dot,
+       filename = paste0(plots.out.dir,"Ahr_",tissue,"_ct_cond_dot.pdf"),
+       device = "pdf",
+       dpi = 300,
+       width = 14,
+       height = 10,
+       limitsize = F)
+
+})
+```
+
+#### Tissue-celltype-condition venn
+
+```{r}
+data@meta.data$tissue_ct <- paste0(data@meta.data$tissue,
+                                   "_._",data@meta.data$new.anno) 
+Idents(data) <- data@meta.data$tissue_ct
+
+
+df <- FetchData(data,vars = c("Ahr","condition","tissue_ct"))
+
+tissue.ct.cond.v <- ggplot(df, aes(x = tissue_ct,
+                                 y = Ahr,
+                                 fill = tissue_ct)) +
+  geom_violin(scale = "width", trim = TRUE) + 
+  geom_jitter(size = 0.3,alpha = 0.4) + 
+  facet_wrap(~ condition, ncol = 1) +
+  theme_classic() + 
+  theme(axis.text.x = element_text(angle=90, hjust=1, vjust = 0.3)) + 
+  NoLegend()
+
+ggsave(plot = tissue.ct.cond.v,
+      filename = paste0(plots.out.dir,"Tissue_ct_condition_wrap.pdf"),
+      device = "pdf",
+      dpi = 250,
+      width = 16,
+      height = 10,
+      limitsize = F)
+```
+
+### Ahr-set expression
+
+```{r}
+ahr.genes <- read_excel("mouse_Ahr-related-genes_FInal.xlsx")
+ahr.genes <- unique(ahr.genes$mgi_symbol)
+ahr.genes <- intersect(ahr.genes,row.names(data@assays$SCT))
+
+data <- AddModuleScore(data,
+                       assay = "SCT",
+                       features = list(ahr.genes),
+                       name = "Ahr.set")
+
+ahr.set.v <- VlnPlot(object = data,
+                     features = "Ahr.set1",
+                     group.by = "new.anno",
+                     split.by = "condition")
+
+ggsave(plot = ahr.set.v,filename = "D:/WORK/Projects/B04/plots/Manuscript_figures/Ahr_set_vln.pdf",
+      device = "pdf",
+      dpi = 150,
+      width = 20,
+      height = 10,
+      limitsize = F)
+
+
+Idents(data) <- data@meta.data$tissue
+
+ahr.set.tissue.lst <- lapply(X = unique(data@meta.data$tissue),
+                            FUN = function(t){
+  
+  t.data <- subset(data,idents = t)
+  
+  tissue.v <- VlnPlot(object = t.data,
+                     features = "Ahr.set1",
+                     group.by = "new.anno",
+                     split.by = "condition") +
+    ggtitle(paste0("Tissue : ",t))
+  
+  return(tissue.v)
+})
+ahr.set.tissue.wrap <- wrap_plots(ahr.set.tissue.lst,ncol = 2,nrow = 2)
+
+ggsave(plot = ahr.set.tissue.wrap,
+      filename = paste0(plots.out.dir,"Ahr_set_tissue_vln.pdf"),
+      device = "pdf",
+      dpi = 150,
+      width = 30,
+      height = 15,
+      limitsize = F)
+```
+
+```{r}
+data@meta.data$tissue_ct_cond <- paste0(data@meta.data$tissue,
+                                 "_",data@meta.data$new.anno,
+                                 "_",data@meta.data$condition)
+
+Idents(data) <- data@meta.data$tissue_ct_cond
+
+ahr.set.dot <- DotPlot(object = data,
+                       assay = "RNA",
+                       features = c("Ahr","Ahrr",
+                                    "Cyp1a1","Cyp1b1",
+                                    "Nqo1", "Tiparp"))
+ahr.set.dot.df <- ahr.set.dot$data
+colnames(ahr.set.dot.df)[3] <- "gene" 
+
+
+df <- do.call("rbind",lapply(X = as.character(ahr.set.dot.df$id),FUN = function(x){
+  x.sp <- unlist(strsplit(x = x,split = "_"))
+  return(data.frame("tissue"=paste0(x.sp[1:(length(x.sp)-2)],
+                                    collapse = "_"),
+                    "celltype" = x.sp[length(x.sp)-1],
+                    "condition"=x.sp[length(x.sp)]))
+  }))
+
+combos <- expand.grid(unique(meta$tissue),unique(meta$new.anno),
+                      unique(meta$condition),c("Ahr","Ahrr",
+                                    "Cyp1a1","Cyp1b1",
+                                    "Nqo1", "Tiparp"))
+
+colnames(combos) <- c("tissue","celltype","condition","gene")
+combos$id <- paste0(combos$tissue,"_",combos$celltype,
+                    "_",combos$condition)
+
+ahr.set.dot.df <- cbind.data.frame(ahr.set.dot.df,df,stringsAsFactors = F)
+ahr.set.dot.df <- left_join(x = combos,y = ahr.set.dot.df,
+                            by = c("id","tissue","celltype",
+                                   "condition","gene"))
+
+ahr.set.dot.df$avg.exp[is.na(ahr.set.dot.df$avg.exp)] <- min(ahr.set.dot.df$avg.exp,na.rm = T)
+
+ahr.set.dot.df$pct.exp[is.na(ahr.set.dot.df$pct.exp)] <- min(ahr.set.dot.df$pct.exp,na.rm = T)
+
+ahr.set.dot.df$avg.exp.scaled[is.na(ahr.set.dot.df$avg.exp.scaled)] <- min(ahr.set.dot.df$avg.exp.scaled,na.rm = T)
+
+
+
+set.dot.lst <- lapply(X = c("LP_SI","mLN","Liver"),FUN = function(tissue){
+  
+  tissue.df <- ahr.set.dot.df[which(ahr.set.dot.df$tissue == tissue),]
+  
+  tissue.dot <- ggplot(tissue.df, aes(x = condition,
+                                             y = celltype)) +
+  geom_point(aes(size = pct.exp, color = avg.exp.scaled)) +
+  facet_wrap(~gene,
+             ncol = length(unique(ahr.set.dot.df$gene))) +
+  scale_color_viridis(option = "viridis", direction = 1) +
+  scale_size(range = c(2, 10)) +
+  theme(strip.text = element_text(face="bold"),
+        axis.text.x = element_text(angle=45, hjust=1)) +
+  labs(title = paste0("Tissue:",tissue),
+       size = "% cells expressing",
+       color = "Scaled avg expression")
+  
+  return(tissue.dot)
+})
+names(set.dot.lst) <- c("LP_SI","mLN","Liver")
+
+set.dot.wrap <- wrap_plots(set.dot.lst,ncol = 3)
+ggsave(plot = set.dot.wrap,
+       filename = paste0(plots.out.dir,"Ahr_set_dot.pdf"),
+      device = "pdf",
+      dpi = 150,
+      width = 30,
+      height = 10,
+      limitsize = F)
+```
